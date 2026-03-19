@@ -141,7 +141,12 @@ jobs:
       - name: Run spindle-flux-ubuntu testsuite
         id: flux-ubuntu-testsuite
         run: |
-          docker exec node-1 bash -c 'cd Spindle-build/testsuite && flux alloc --nodes=${workers} ./runTests --nodes=${workers} --tasks-per-node=3'
+          docker exec -e SPINDLE_DEBUG=2 node-1 bash -c 'cd Spindle-build/testsuite && flux alloc --nodes=${workers} ./runTests --nodes=${workers} --tasks-per-node=3'
+
+      - name: Show shmcache spin counter output
+        if: ${{ always() }}
+        run: |
+          docker exec node-1 bash -c 'grep -h "Spun" ~/Spindle-build/testsuite/spindle_output 2>/dev/null || echo "No spin counter output found"'
 
       - name: Bring spindle-flux-ubuntu down
         id: flux-ubuntu-down
