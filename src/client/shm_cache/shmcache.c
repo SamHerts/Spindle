@@ -589,7 +589,10 @@ int shmcache_waitfor_update(const char *libname, char **result)
 
    debug_printf3("Blocking until %s is updated in shmcache\n", libname);
    entry_result = &entry->result;
-   while (volatile_sheep_ptr(entry_result) == in_progress);
+   unsigned long spin_count = 0;
+   while (volatile_sheep_ptr(entry_result) == in_progress)
+      spin_count++;
+   debug_printf2("Spun %lu times waiting for shmcache entry for %s\n", spin_count, libname);
 
    sresult = sheep_ptr(&entry->result);
    
