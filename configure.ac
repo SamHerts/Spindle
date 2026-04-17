@@ -19,10 +19,23 @@ PKG_PROG_PKG_CONFIG
 SPINDLE_BUILD_ROOT=`pwd`
 SPINDLE_SOURCE_ROOT=`realpath ${srcdir}`
 
-#Include common ops
+#Include common macro library and call macros needed at the root level
 m4_include([configure.common.ac])
 m4_include([m4/ax_tls.m4])
 m4_include([m4/lmon.m4])
+
+SPINDLE_NETWORK_CONFIG
+SPINDLE_OS_DETECT
+SPINDLE_RESOURCE_MANAGER
+SPINDLE_COMM_MODE
+SPINDLE_SEC_ARGS
+SPINDLE_OPTIONAL_FEATURES
+SPINDLE_FLUX_DETECT
+SPINDLE_GLIBC_BUGS
+SPINDLE_LDSO_PATCH
+SPINDLE_GLIBC_LOCATION
+SPINDLE_STATIC_LINK
+
 AX_TLS
 
 #MPI detection

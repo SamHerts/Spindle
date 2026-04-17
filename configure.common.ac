@@ -1,597 +1,756 @@
-#Configure operations that are common between the Spindle and Spindle-client configurations
-#Network port and local storage location
-DEFAULT_PORT=21940
-DEFAULT_LOC='$TMPDIR'
-DEFAULT_NUM_COBO_PORTS=250
-DEFAULT_LOCAL_PREFIX='/var/:/tmp/:/proc/:/dev/:/sys/'
+# configure.common.ac — Spindle shared autoconf macro library.
+#
+# This file contains only AC_DEFUN macro definitions; no code runs at
+# m4_include time.  Each configure.ac explicitly calls the macros it needs,
+# making the dependency graph visible and allowing AC_REQUIRE to enforce
+# ordering within a single configure invocation.
+#
+# Macro inventory:
+#   SPINDLE_NETWORK_CONFIG    — ports, localstorage, cache-exclusion prefix
+#   SPINDLE_RESOURCE_MANAGER  — --with-rm, SLURM/Flux flags, srun version check
+#   SPINDLE_OS_DETECT         — OS/architecture detection, AM_CONDITIONALs
+#   SPINDLE_COMM_MODE         — client/server and server/server comm selection
+#   SPINDLE_OPTIONAL_FEATURES — NUMA, python-prefix, usage-logging, cleanup, subaudit
+#   SPINDLE_SEC_ARGS          — security option argument parsing (precursor to CHOOSE_SEC)
+#   SPINDLE_FLUX_DETECT       — Flux pkg-config probe; sets final BLD_FLUXPLUGIN
+#   SPINDLE_GLIBC_BUGS        — compiler-run glibc DTV and locale-TLS bug tests
+#   SPINDLE_LDSO_PATCH        — compiler-run ld.so binary-patching safety test
+#   SPINDLE_GLIBC_LOCATION    — back-end glibc directory detection and override
+#   SPINDLE_STATIC_LINK       — probe whether -static linking works (STATICFLAG)
+#   CHOOSE_SEC                — security backend selection and library detection
+#   CHOOSE_DEF_AUDIT          — subaudit default mode selection
+#   CHECK_MMAP                — first-page executable remapping detection
 
-AM_MAINTAINER_MODE([disable])
+# ---------------------------------------------------------------------------
+# SPINDLE_NETWORK_CONFIG
+# Ports, local storage directory, and cache-exclusion prefix list.
+# ---------------------------------------------------------------------------
+AC_DEFUN([SPINDLE_NETWORK_CONFIG],[
+  AM_MAINTAINER_MODE([disable])
+  AC_SUBST([AR_FLAGS],[cr])
 
-AC_SUBST([AR_FLAGS], [cr])
+  AC_ARG_WITH([default-port],
+    [AS_HELP_STRING([--with-default-port=NUM],
+      [TCP/IP port for Spindle server communication])],
+    [SPINDLE_PORT=${withval}],
+    [SPINDLE_PORT=21940])
+  AC_ARG_WITH([default-num-ports],
+    [AS_HELP_STRING([--with-default-numports=NUM],
+      [Number of TCP/IP ports to scan for Spindle server communication])],
+    [NUM_COBO_PORTS=${withval}],
+    [NUM_COBO_PORTS=250])
+  AC_ARG_WITH([localstorage],
+    [AS_HELP_STRING([--with-localstorage=DIR],
+      [Directory on back-ends for storing relocated files])],
+    [SPINDLE_LOC=${withval}],
+    [SPINDLE_LOC='$TMPDIR'])
+  AC_ARG_WITH([default-local-prefix],
+    [AS_HELP_STRING([--with-default-local-prefix=DIRS],
+      [Colon-separated list of directories that Spindle will not cache files out of])],
+    [SPINDLE_LOCAL_PREFIX=${withval}],
+    [SPINDLE_LOCAL_PREFIX="/var/:/tmp/:/proc/:/dev/:/sys/:$SPINDLE_LOC"])
 
-AC_ARG_WITH(default-port,
-            [AS_HELP_STRING([--with-default-port=NUM],[TCP/IP Port for Spindle server communication])],
-            [SPINDLE_PORT=${withval}],
-            [SPINDLE_PORT=$DEFAULT_PORT])
-AC_ARG_WITH(default-num-ports,
-            [AS_HELP_STRING([--with-default-numports=NUM],[Number of TCP/IP ports to scan for Spindle server communication])],
-            [NUM_COBO_PORTS=${withval}],
-            [NUM_COBO_PORTS=$DEFAULT_NUM_COBO_PORTS])
-AC_ARG_WITH(localstorage,
-            [AS_HELP_STRING([--with-localstorage=DIR],[Directory on back-ends for storing relocated files])],
-            [SPINDLE_LOC=${withval}],
-            [SPINDLE_LOC=$DEFAULT_LOC])
-AC_ARG_WITH(default-local-prefix,
-            [AS_HELP_STRING([--with-default-local-prefix=DIRS],[Colon-seperated list of directories that Spindle will not cache files out of])],
-            [SPINDLE_LOCAL_PREFIX=${withval}],
-            [SPINDLE_LOCAL_PREFIX="$DEFAULT_LOCAL_PREFIX:$SPINDLE_LOC"])
-AC_DEFINE_UNQUOTED([SPINDLE_PORT],[$SPINDLE_PORT],[The default port for Spindle])
-AC_DEFINE_UNQUOTED([NUM_COBO_PORTS],[$NUM_COBO_PORTS],[Number of ports for COBO to search for an open port])
-AC_DEFINE_UNQUOTED([SPINDLE_MAX_PORT],[$(($SPINDLE_PORT + $NUM_COBO_PORTS - 1))],[The maximum port value])
-AC_DEFINE_UNQUOTED([SPINDLE_LOC],"[$SPINDLE_LOC]",[The default local directory for Spindle])
-AC_DEFINE_UNQUOTED([SPINDLE_LOCAL_PREFIX],"[$SPINDLE_LOCAL_PREFIX]",[The default colon-separated list of directories that Spindle will not cache files out of])
-
-TESTRM=unknown
-AC_ARG_WITH(testrm,
-       [AS_HELP_STRING([--with-testrm=ARG],[])],
-       [TESTRM=${withval}],
-       [])
-AC_ARG_WITH(rm,
-        [AS_HELP_STRING([--with-rm=ARG],[Default resource manager (valid options are 'slurm', 'slurm-plugin', 'flux', and 'serial')])],
-        [TESTRM=${withval}],
-        [])
-if test "x$TESTRM" == "xunknown"; then
-   AC_MSG_WARN([--with-rm not specified.  Tests will run in serial mode])
-   TESTRM=serial
-fi
-AC_SUBST(TESTRM)
-AC_DEFINE_UNQUOTED([TESTRM], "[$TESTRM]", [Default recource manager])
-
-AC_ARG_ENABLE(slurm,
-              [AS_HELP_STRING([--enable-slurm],[Builds in support for running with SLURM via srun launching])],
-              [ENABLE_SLURM=true],
-              [ENABLE_SLURM=false])
-#Slurm plugin and location detection
-AC_ARG_ENABLE(slurm-plugin,
-              [AS_HELP_STRING([--enable-slurm-plugin],[Builds in support for running with SLURM via plugin])],
-              [ENABLE_SLURM_PLUGIN="true"],
-              [ENABLE_SLURM_PLUGIN="false"])
-AC_ARG_ENABLE(flux-plugin,
-              [AS_HELP_STRING([--enable-flux-plugin],[Builds in support for running flux via a plugin])],
-              [ENABLE_FLUX_PLUGIN="true"],
-              [ENABLE_FLUX_PLUGIN="false"])
-AC_ARG_WITH(slurm-dir,
-            [AS_HELP_STRING([--with-slurm-dir=DIR],[Look in in DIR for root of a slurm installation])]
-            [SLURM_DIR=${withval}])
-
-              
-if test "x$TESTRM" == "xslurm"; then
-   ENABLE_SLURM=true
-fi
-if test "xTESTRM" == "xslurm-plugin"; then
-   ENABLE_SLURM_PLUGIN="true"
-fi
-if test "x$TESTRM" == "xflux"; then
-   ENABLE_FLUX_PLUGIN=true
-fi
-
-if test "x$ENABLE_SLURM" == "xtrue"; then
-  AC_DEFINE([ENABLE_SLURM], [1], [Slurm with via srun launching is enabled])
-fi
-if test "x$ENABLE_SLURM_PLUGIN" == "xtrue"; then
-  AC_DEFINE([ENABLE_SLURM_PLUGIN], [1], [Slurm with via plugin is enabled])
-fi
-if test "x$ENABLE_FLUX_PLUGIN" == "xtrue"; then
-  AC_DEFINE([ENABLE_FLUX_PLUGIN], [1], [Flux with via plugin is enabled])
-fi
-AM_CONDITIONAL([BLD_FLUXPLUGIN], [test "x$ENABLE_FLUX_PLUGIN" = "xtrue"])
-
-AC_MSG_CHECKING([for glibc dtv allocation bug])
-if ${SPINDLE_SOURCE_ROOT}/scripts/dtvtest/run_dtvtest.sh ${SPINDLE_SOURCE_ROOT}/scripts/dtvtest ${SPINDLE_BUILD_ROOT}/dtvtest '$CC' '$CFLAGS'; then
-   DTV_ALLOC_BUG=0
-   AC_MSG_RESULT([no])
-else
-   DTV_ALLOC_BUG=1
-   AC_MSG_RESULT([yes])
-fi
-AC_DEFINE_UNQUOTED([DTV_ALLOCATION_BUG],[$DTV_ALLOC_BUG],[Defined if GLIBC has an allocation bug])
-
-AC_MSG_CHECKING([for locale tls fault glibc bug])
-if ${SPINDLE_SOURCE_ROOT}/scripts/locale_tls_fault/tls_locale_fault.sh ${SPINDLE_SOURCE_ROOT}/scripts/locale_tls_fault ${SPINDLE_BUILD_ROOT}/locale_tls_fault $CC; then
-   LOCALE_FAULT_BUG=0
-   AC_MSG_RESULT([no])
-else
-   LOCALE_FAULT_BUG=1
-   AC_MSG_RESULT([yes])
-fi
-AC_DEFINE_UNQUOTED([NEWTHREAD_LOCALE_BUG],[$LOCALE_FAULT_BUG],[Defined if GLIBC has locale TLS bug])
-
-
-#OS Detection
-AC_ARG_ENABLE(bluegene,
-              [AS_HELP_STRING([--enable-bluegene],[Build Spindle for BlueGene/Q])],
-              [OS_BUILD=bluegene],)
-if test "x$OS_BUILD" == "x"; then
-  OS_BUILD=linux
-fi
-
-#Startup type
-AC_ARG_WITH(hostbin,
-            [AS_HELP_STRING([--with-hostbin=EXE],[Executable for returning host lists for jobs])],
-            [AC_DEFINE_UNQUOTED([HOSTBIN_PATH],"[${withval}]",[Hostbin executable])],)
-
-#RSH mode settings
-AC_ARG_WITH(rsh-launch,
-            [AS_HELP_STRING([--with-rsh-launch],[Enable rsh launch mode by default for startup modes that support it])],
-            [ENABLE_RSH_LAUNCH=1],)
-
-AC_ARG_WITH(rsh-cmd,
-            [AS_HELP_STRING([--with-rsh-cmd=EXE],[Executable to use for rsh/ssh when running in rsh launch mode])],
-            [AC_DEFINE_UNQUOTED([RSHLAUNCH_CMD],"[${withval}]",[RSH command])],)
-
-AC_ARG_WITH(slurm-launch,
-            [AS_HELP_STRING([--with-slurm-launch],[Enable using slurm to launch spindle daemons])],
-            [ENABLE_SLURM_LAUNCH=1],)
-
-AS_CASE([$sysconfdir],
-        [*/spindle],[PKGSYSCONF_DIR=$sysconfdir],
-        [*/spindle/],[PKGSYSCONF_DIR=$sysconfdir],
-        [PKGSYSCONF_DIR=$sysconfdir/spindle])
-
-BROKEN_SRUN=0
-bad_srun_major=20
-bad_srun_minor=11
-good_srun_major=0
-good_srun_minor=0
-if test "x$ENABLE_SLURM" == "xtrue"; then
-  AC_PATH_PROG(SRUN_PATH, "srun", "none")
-  if test "x$SRUN_PATH" == "xnone"; then
-     AC_MSG_ERROR([Slurm support was requested but could not find srun in PATH])
-  fi
-  AC_MSG_CHECKING([slurm version for compatibility])
-  srun_version=`${SRUN_PATH} --version | cut -d ' ' -f 2`
-  srun_major=`echo $srun_version | cut -d . -f 1`
-  srun_minor=`echo $srun_version | cut -d . -f 2`
-  srun_point=`echo $srun_version | cut -d . -f 3`
-  if ( [[ "$srun_major" == "$bad_srun_major" ]] && [[ $srun_minor -ge $bad_srun_minor ]] ) || [[ $srun_major -gt $bad_srun_major ]] ; then BROKEN_SRUN=1; fi
-  if test "x$good_srun_major" != "x0"; then
-    if ( [[ "$srun_major" == "$good_srun_major" ]] && [[ $srun_minor -ge $good_srun_minor ]] ) || [[ $srun_major -gt $good_srun_major ]] ; then BROKEN_SRUN=0; fi
-  fi
-  
-  if test "x$BROKEN_SRUN" == "x1"; then
-    AC_MSG_RESULT([no])
-  else
-    AC_MSG_RESULT([yes])
-  fi
-
-  if [[ "x$ENABLE_SLURM_LAUNCH" == "x1" ]] && [[ "x$BROKEN_SRUN" == "x1" ]] ; then
-    AC_MSG_WARN([Slurm launching was explicitly requested, but slurm $srun_version, which is later than $bad_srun_major.$bad_srun_minor, was detected.  This version of slurm breaks spindle daemon launch.  You might still be able to get spindle to work by running jobs with srun's --overlap option.  Or you could switch to having spindle launch daemons with rsh/ssh by passing the --with-rsh-launch option, and ensuring that rsh/ssh to nodes works on your cluster.])
-  fi
-  
-  if [[ "x$ENABLE_RSH_LAUNCH" != "x1" ]] && [[ "x$ENABLE_SLURM_LAUNCH" != "x1" ]] && [[ "x$ENABLE_SLURM_PLUGIN" != "xtrue" ]] ; then
-    if test "x$BROKEN_SRUN" == "x1"; then
-      AC_MSG_ERROR([Slurm support was requested, but slurm $srun_version, which is later than $bad_srun_major.$bad_srun_minor, was detected.  This version of slurm breaks spindle daemon launch.  You can disable this error message and build spindle with slurm-based daemon launching anyways by explicitly passing the --with-slurm-launch option (you might still be able to get spindle to work by running jobs with srun's --overlap option).  Or you could switch to having spindle launch daemons with rsh/ssh by passing the --with-rsh-launch option, and ensuring that rsh/ssh to nodes works on your cluster.])
-    else
-      ENABLE_SLURM_LAUNCH=1
-    fi
-  fi
-fi
-
-if test "x$ENABLE_SLURM_LAUNCH" == "x1"; then
-   AC_DEFINE_UNQUOTED([SLURMLAUNCH_ENABLED],[1],[Default mode for slurm launch])
-fi
-if test "x$ENABLE_RSH_LAUNCH" == "x1"; then
-  AC_DEFINE_UNQUOTED([RSHLAUNCH_ENABLED],[1],[Default mode for rsh launch])
-fi
-AC_DEFINE_UNQUOTED([BROKEN_SRUN],[1],[Whether we are using a broken srun])
-            
-#Runmode detection (pipe/socket or cobo/msocket communications)
-if test "x$OS_BUILD" == "xlinux"; then
-  CLIENT_SERVER_COM=pipes
-fi
-if test "x$OS_BUILD" == "xbluegene"; then
-  CLIENT_SERVER_COM=biter
-fi
-
-SERVER_SERVER_COM=cobo
-AC_ARG_ENABLE(pipes,
-              [AS_HELP_STRING([--enable-pipes],[Use pipes for server/client communication])],
-              [CLIENT_SERVER_COM=pipes;],)
-AC_ARG_ENABLE(socket,
-              [AS_HELP_STRING([--enable-socket],[Use sockets for server/client communication])],
-              [CLIENT_SERVER_COM=sockets;],)
-AC_ARG_ENABLE(shmem,
-              [AS_HELP_STRING([--enable-shmem],[Use shared memory for server/client communication])],
-              [CLIENT_SERVER_COM=shmem;],)
-AC_ARG_ENABLE(biter,
-              [AS_HELP_STRING([--enable-biter],[Use biter for server/client communication])],
-              [CLIENT_SERVER_COM=biter;],)
-
-
-AC_ARG_ENABLE(msocket,
-              [AS_HELP_STRING([--enable-msocket],[Use msocket for inter-server communication])],
-              [SERVER_SERVER_COM=msocket;],)
-AC_ARG_ENABLE(cobo,
-              [AS_HELP_STRING([--enable-cobo],[Use msocket for inter-server communication])],
-              [SERVER_SERVER_COM=cobo;],)
-
-AM_CONDITIONAL([PIPES], [test x$CLIENT_SERVER_COM == xpipes])
-AM_CONDITIONAL([SOCKETS], [test x$CLIENT_SERVER_COM == xsocket])
-AM_CONDITIONAL([SHMEM], [test x$CLIENT_SERVER_COM == xshmem])
-AM_CONDITIONAL([BITER], [test x$CLIENT_SERVER_COM == xbiter])
-AM_CONDITIONAL([MSOCKET], [test x$SERVER_SERVER_COM == xmsocket])
-AM_CONDITIONAL([COBO], [test x$SERVER_SERVER_COM == xcobo])
-
-if test "x$CLIENT_SERVER_COM" == "xpipes"; then
-  AC_DEFINE([COMM_PIPES],[1],[Define if were using pipes for client/server communication])
-fi
-if test "x$CLIENT_SERVER_COM" == "xsocket"; then
-  AC_DEFINE([COMM_SOCKET],[1],[Define if were using sockets for client/server communication])
-fi
-if test "x$CLIENT_SERVER_COM" == "xbiter"; then
-  AC_DEFINE([COMM_BITER],[1],[Define if were using biter for client/server communication])
-fi
-if test "x$SERVER_SERVER_COM" == "xmsocket"; then
-  AC_DEFINE([COMM_MSOCKET],[1],[Define if were using msocket for server/server communication])
-fi
-if test "x$SERVER_SERVER_COM" == "xcobo"; then
-  AC_DEFINE([COMM_COBO],[1],[Define if were using cobo for server/server communication])
-fi
-
-AC_MSG_NOTICE([Communication is $CLIENT_SERVER_COM/$SERVER_SERVER_COM])
-
-#Architecture detection
-if test "x$target_cpu" == "xx86_64"; then
-  AC_DEFINE([arch_x86_64],[1],[Define if we're compiling for an x86_64 target])
-  ARCH_BUILD=x86_64
-fi
-if test "x$target_cpu" == "xppc64le"; then
-  AC_DEFINE([arch_ppc64le],[1],[Define if we're compiling for a ppc64le target])
-  ARCH_BUILD=ppc64le
-fi
-if test "x$target_cpu" == "xpowerpc64le"; then
-  AC_DEFINE([arch_ppc64le],[1],[Define if we're compiling for a ppc64le target])
-  ARCH_BUILD=ppc64le
-fi
-if test "x$target_cpu" == "xppc64"; then
-  AC_DEFINE([arch_ppc64],[1],[Define if we're compiling for a ppc64 target])
-  ARCH_BUILD=ppc64
-fi
-if test "x$target_cpu" == "xpowerpc64"; then
-  AC_DEFINE([arch_ppc64],[1],[Define if we're compiling for a ppc64 target])
-  ARCH_BUILD=ppc64
-fi
-if test "x$target_cpu" == "xppc32"; then
-  AC_DEFINE([arch_ppc32],[1],[Define if we're compiling for a ppc64 target])
-  ARCH_BUILD=ppc64
-fi
-if test "x$target_cpu" == "xpowerpc32"; then
-  AC_DEFINE([arch_ppc32],[1],[Define if we're compiling for a ppc64 target])
-  ARCH_BUILD=ppc64
-fi
-if test "x$target_cpu" == "xaarch64"; then
-  AC_DEFINE([arch_aarch64],[1],[Define if we're compiling for an aarch64 target])
-  ARCH_BUILD=aarch64
-fi
-
-#OS defines
-AM_CONDITIONAL([BGQ_BLD], [test "x$OS_BUILD" == "xbluegene"])
-AM_CONDITIONAL([LINUX_BLD], [test "x$OS_BUILD" == "xlinux"])
-AM_CONDITIONAL([X86_64_BLD], [test "x$ARCH_BUILD" == "xx86_64"])
-AM_CONDITIONAL([PPC64_BLD], [test "x$ARCH_BUILD" == "xppc64"])
-AM_CONDITIONAL([PPC64LE_BLD], [test "x$ARCH_BUILD" == "xppc64le"])
-AM_CONDITIONAL([AARCH64_BLD], [test "x$ARCH_BUILD" == "xaarch64"])
-
-if test "x$OS_BUILD" == "xlinux"; then
-AC_DEFINE([os_linux],[1],[Define if we're compiling for a linux target])
-fi
-if test "x$OS_BUILD" == "xbluegene"; then
-AC_DEFINE([os_bluegene],[1],[Define if we're compiling for a BlueGene target])
-fi
-
-#Python prefix
-AC_ARG_WITH(python-prefix,
-            [AS_HELP_STRING([--with-python-prefix=STR],[List of directories containing python installs])],
-            [PYTHON_INST_PREFIX=${withval}],
-            [PYTHON_INST_PREFIX=/usr/lib/python:/usr/lib64/python])
-AC_DEFINE_UNQUOTED([PYTHON_INST_PREFIX],"[$PYTHON_INST_PREFIX]",[Python installation prefixes])
-
-#NUMA configuration
-AC_ARG_ENABLE(numa,
-              [AS_HELP_STRING([--enable-numa],[Use libnuma to enable numa optimizations])],
-              [REQUIRE_NUMA="true"])
-AC_ARG_WITH(numa-excludes,
-            [AS_HELP_STRING([--with-numa-excludes],[Do not numa optimize files matching the given substrings])],
-            [NUMA_EXCLUDES_VAL=${withval}],
-            [NUMA_EXCLUDES_VAL=""])
-              
-AC_MSG_CHECKING([whether we have libnuma])
-ORIG_LIBS=$LIBS
-LIBS="$LIBS -lnuma"
-AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <numa.h>],[numa_available();])],
-               [HAVE_NUMA="true";AC_MSG_RESULT([yes])], [AC_MSG_RESULT([no])])
-LIBS=$ORIG_LIBS
-
-if test "x$REQUIRE_NUMA" == "xtrue"; then
-  if test "x$HAVE_NUMA" != "xtrue"; then
-    AC_MSG_ERROR([Could not link with libnuma, but numa required])
-  fi
-fi
-if test "x$HAVE_NUMA" == "xtrue"; then
-  AC_DEFINE([LIBNUMA], [1], [Use libnuma for numa optimizations])
-  AC_DEFINE_UNQUOTED([NUMA_EXCLUDES], "[$NUMA_EXCLUDES_VAL]", [Exclusions for numa optimization])
-fi
-              
-              
-#Usage logging
-AC_ARG_WITH(usage-logging,
-            [AS_HELP_STRING([--with-usage-logging=FILE],[File for writing usage logs])],
-            [USAGE_LOGS=${withval}])
-if test "x$USAGE_LOGS" != "x"; then
-  AC_DEFINE_UNQUOTED([USAGE_LOGGING_FILE],"[$USAGE_LOGS]",[The file for storing usage logs])
-fi
-
-#Dedicated cleanup process
-AC_ARG_ENABLE(cleanup-process,
-             [AS_HELP_STRING([--enable-cleanup-process],[Default to using a dedicated process to clean relocated files])],
-             [CLEANUP_PROC="true"],)
-if test "x$OS_BUILD" == "xbluegene"; then
-  CLEANUP_PROC="true"
-fi
-
-#Audit options
-AC_ARG_ENABLE(subaudit-as-default,
-              [AS_HELP_STRING([--enable-subaudit-as-default],[Enable subaudit option as defaulted to on])],
-              [USE_SUBAUDIT_BY_DEFAULT="true"])
-
-if test "x$ENABLE_FLUX_PLUGIN" = "xtrue"; then
-  # Check for whether to build Flux shell plugin
-  PKG_CHECK_MODULES([FLUX_CORE], [flux-core > 0.40.0], [], [ENABLE_FLUX_PLUGIN=false])
-  PKG_CHECK_MODULES([FLUX_HOSTLIST], [flux-hostlist], [], [])
-  if test "x$ENABLE_FLUX_PLUGIN" = "xtrue"; then
-    AS_VAR_SET(shell_plugindir, $libdir)
-    AC_SUBST(shell_plugindir)
-    fluxplugin_ldflags="-export-symbols-regex '^flux_plugin_init\$\$' --disable-static -shared -export-dynamic"
-    AC_SUBST(fluxplugin_ldflags)
-  fi
-fi
-
-#Check if we can safely do dynamic patching on ld.so on this system
-AC_MSG_CHECKING([whether it is safe to binary patch ld.so on this system])
-AC_LANG_PUSH(C)
-if test -d ${srcdir}/scripts; then rootsrcdir=${srcdir}; else rootsrcdir=${srcdir}/../..; fi
-auxdir=${rootsrcdir}/scripts
-${auxdir}/rewrite.sh ${rootsrcdir}/src . $CC
-if test "x$?" == "x0"; then
-   AC_MSG_RESULT([yes])
-   PATCH_LDSO=1
-else
-   AC_MSG_RESULT([no])   
-   PATCH_LDSO=0
-fi 
-AC_DEFINE_UNQUOTED([BINARY_PATCH_LDSO],[$PATCH_LDSO],[Whether it is safe to patch ld.so])
-
-if test "x$GLIBC_BE_DIR" = "x"; then
-  # Get glibc location on front-end
-  CAT=`which cat`
-  LIBC_FILE=`ldd $CAT | grep libc | awk -F ' ' '{print $3}'`
-  GLIBC_BE_DIR=`dirname $LIBC_FILE`
-fi
-AC_MSG_NOTICE([glibc backend location set to $GLIBC_BE_DIR])
-
-#Security options
-AC_DEFINE([KEY_SIZE_BYTES], [32], [Number of bytes in keys for gcrypt])
-
-AC_MSG_CHECKING([whether static linking works...])
-OLD_LDFLAGS="$LDFLAGS"
-LDFLAGS="$LDFLAGS -static"
-AC_LANG_PUSH(C)
-STATICFLAG=""
-AC_LINK_IFELSE([AC_LANG_SOURCE([int main(int argc, char *argv[]) { return 0; }])], [STATICFLAG="-all-static"; AC_MSG_RESULT([yes])], [AC_MSG_RESULT([no])])
-AC_LANG_POP
-LDFLAGS=$OLD_LDFLAGS
-AC_SUBST(STATICFLAG)
-
-AC_ARG_ENABLE(sec-munge,
-              [AS_HELP_STRING([--enable-sec-munge],[Enable munge for connection authentication])],
-              [WANT_MUNGE="true"; EXPLICIT_SEC="true"],)
-AC_ARG_ENABLE(sec-keydir,
-              [AS_HELP_STRING([--enable-sec-keydir=keydir],[Enable filesystem directory 'keydir' to propagate authentication key for connections])],
-              [WANT_KEYFILE="true";SEC_KEYDIR=$enableval;EXPLICIT_SEC="true"],)
-AC_ARG_ENABLE(sec-launchmon,
-              [AS_HELP_STRING([--enable-sec-launchmon],[Enable LaunchmMON to propagate authentication key for connections])],
-              [WANT_SECLMON="true";EXPLICIT_SEC="true"],)
-AC_ARG_ENABLE(sec-none,
-              [AS_HELP_STRING([--enable-sec-none],[Disable security authentication of connections])],
-              [WANT_NOSEC="true";EXPLICIT_SEC="true"],)
-
-AC_ARG_WITH(gcrypt-dir,
-            [AS_HELP_STRING([--with-gcrypt-dir=DIR],[Look in DIR for gcrypt installation])],
-            [GCRYPT_CFLAGS="-I${withval}/include";GCRYPT_LIBS="-L${withval}/lib"],)
-
-AC_ARG_WITH(munge-dir,
-            [AS_HELP_STRING([--with-munge-dir=DIR],[Look in DIR for munge installation])],
-            [MUNGE_DIR=${withval}])
-
-AC_ARG_WITH(glibc-be-dir,
-            [AS_HELP_STRING([--with-glibc-be-dir=DIR],[If glibc on compute nodes is installed in a non-standard location, then DIR is the directory containing libc.so.6])],
-            [GLIBC_BE_DIR=${withval}])
-
-AC_ARG_ENABLE(remap-pageone,
-              [AS_HELP_STRING([--enable-remap-pageone],[Controls mmap behavior when replacing executables. Should be false on older linux systems])],
-              [SET_REMAP_FIRST_PAGE=$enableval],)
-
-AC_DEFUN([CHOOSE_DEF_AUDIT],[
-   AC_LANG_PUSH(C)
-   AC_MSG_CHECKING([set subaudit as defaulted to on...])
-   if test "x$USE_SUBAUDIT_BY_DEFAULT" != "x"; then
-     AC_MSG_NOTICE([yes])        
-     AC_DEFINE([USE_SUBAUDIT_BY_DEFAULT], [1], [Use subaudit by default])
-   else
-     AC_MSG_NOTICE([no])        
-   fi
+  AC_DEFINE_UNQUOTED([SPINDLE_PORT],[$SPINDLE_PORT],
+    [The default port for Spindle])
+  AC_DEFINE_UNQUOTED([NUM_COBO_PORTS],[$NUM_COBO_PORTS],
+    [Number of ports for COBO to search for an open port])
+  AC_DEFINE_UNQUOTED([SPINDLE_MAX_PORT],[$(($SPINDLE_PORT + $NUM_COBO_PORTS - 1))],
+    [The maximum port value])
+  AC_DEFINE_UNQUOTED([SPINDLE_LOC],"[$SPINDLE_LOC]",
+    [The default local directory for Spindle])
+  AC_DEFINE_UNQUOTED([SPINDLE_LOCAL_PREFIX],"[$SPINDLE_LOCAL_PREFIX]",
+    [The default colon-separated list of directories that Spindle will not cache files out of])
 ])
 
-AC_DEFUN([CHECK_MMAP],[
-   AC_MSG_CHECKING([whether to remap first pages])
-   if test "x$SET_REMAP_FIRST_PAGE" != "x"; then
-      REMAP_FIRST_PAGE=$SET_REMAP_FIRST_PAGE;
-   else
-     AC_LANG_PUSH(C)     
-     REMAP_FIRST_PAGE=unknown
-     OLD_CFLAGS=$CFLAGS
-     tmp=.
-     if test -d ${srcdir}/scripts; then auxdir=${srcdir}/scripts; else auxdir=${srcdir}/../../scripts; fi
-     CFLAGS="$CFLAGS -I${srcdir} -L${tmp}"
+# ---------------------------------------------------------------------------
+# SPINDLE_RESOURCE_MANAGER
+# Resource manager selection, SLURM/Flux enable flags, srun version check,
+# daemon launch mode (slurm-launch vs rsh-launch), and sysconfdir layout.
+# Bug fixes applied here:
+#   - Missing $ before TESTRM in the slurm-plugin branch (was dead code)
+#   - BROKEN_SRUN define now uses $BROKEN_SRUN instead of hardcoded 1
+# ---------------------------------------------------------------------------
+AC_DEFUN([SPINDLE_RESOURCE_MANAGER],[
+  TESTRM=unknown
+  AC_ARG_WITH([testrm],
+    [AS_HELP_STRING([--with-testrm=ARG],[Resource manager to use for tests (internal)])],
+    [TESTRM=${withval}])
+  AC_ARG_WITH([rm],
+    [AS_HELP_STRING([--with-rm=ARG],
+      [Default resource manager (valid options: slurm, slurm-plugin, flux, serial)])],
+    [TESTRM=${withval}])
+  if test "x$TESTRM" == "xunknown"; then
+    AC_MSG_WARN([--with-rm not specified.  Tests will run in serial mode])
+    TESTRM=serial
+  fi
+  AC_SUBST(TESTRM)
+  AC_DEFINE_UNQUOTED([TESTRM],"[$TESTRM]",[Default resource manager])
 
-     if test "x$REMAP_FIRST_PAGE" == "xunknown"; then
-        ${auxdir}/remap.sh ${tmp} ${auxdir}/.. "$CC $CFLAGS $LDFLAGS" $1
-        if test "x$?" == "x0"; then
-           REMAP_FIRST_PAGE=true
-        fi
-     fi
-     if test "x$REMAP_FIRST_PAGE" == "xunknown"; then
-        ${auxdir}/remap.sh ${tmp} ${auxdir}/.. "$CC -DREMAP_LEAVE_FIRST_PAGE $CFLAGS $LDFLAGS" x$1
-        if test "x$?" == "x0"; then
-           REMAP_FIRST_PAGE=false
-        fi      
-     fi
-     if test "x$REMAP_FIRST_PAGE" == "xunknown"; then
-        uname_result=`uname -r`
-        if [[ "${uname_result:0:1}" == "2" ]]; then REMAP_FIRST_PAGE=false; else REMAP_FIRST_PAGE=true; fi
-     fi
-     CFLAGS=$OLD_CFLAGS
-     AC_LANG_POP
-   fi
-   if test "x$REMAP_FIRST_PAGE" == "xtrue"; then
-     AC_MSG_RESULT([yes])
-   elif test "x$REMAP_FIRST_PAGE" == "xfalse"; then
-     AC_MSG_RESULT([no])
-   else
-     AC_MSG_ERROR([Could not determine whether to leave or remap the first page when replacing executables])
-   fi])
-                                  
-                                          
+  AC_ARG_ENABLE([slurm],
+    [AS_HELP_STRING([--enable-slurm],
+      [Build support for running with SLURM via srun launching])],
+    [ENABLE_SLURM=true],[ENABLE_SLURM=false])
+  AC_ARG_ENABLE([slurm-plugin],
+    [AS_HELP_STRING([--enable-slurm-plugin],
+      [Build support for running with SLURM via plugin])],
+    [ENABLE_SLURM_PLUGIN=true],[ENABLE_SLURM_PLUGIN=false])
+  AC_ARG_ENABLE([flux-plugin],
+    [AS_HELP_STRING([--enable-flux-plugin],
+      [Build support for running flux via a plugin])],
+    [ENABLE_FLUX_PLUGIN=true],[ENABLE_FLUX_PLUGIN=false])
+  AC_ARG_WITH([slurm-dir],
+    [AS_HELP_STRING([--with-slurm-dir=DIR],
+      [Look in DIR for root of a slurm installation])],
+    [SLURM_DIR=${withval}])
+
+  if test "x$TESTRM" == "xslurm"; then
+    ENABLE_SLURM=true
+  fi
+  if test "x$TESTRM" == "xslurm-plugin"; then
+    ENABLE_SLURM_PLUGIN=true
+  fi
+  if test "x$TESTRM" == "xflux"; then
+    ENABLE_FLUX_PLUGIN=true
+  fi
+
+  if test "x$ENABLE_SLURM" == "xtrue"; then
+    AC_DEFINE([ENABLE_SLURM],[1],[Slurm via srun launching is enabled])
+  fi
+  if test "x$ENABLE_SLURM_PLUGIN" == "xtrue"; then
+    AC_DEFINE([ENABLE_SLURM_PLUGIN],[1],[Slurm via plugin is enabled])
+  fi
+  if test "x$ENABLE_FLUX_PLUGIN" == "xtrue"; then
+    AC_DEFINE([ENABLE_FLUX_PLUGIN],[1],[Flux via plugin is enabled])
+  fi
+
+  AC_ARG_WITH([hostbin],
+    [AS_HELP_STRING([--with-hostbin=EXE],
+      [Executable for returning host lists for jobs])],
+    [AC_DEFINE_UNQUOTED([HOSTBIN_PATH],"[${withval}]",[Hostbin executable])])
+  AC_ARG_WITH([rsh-launch],
+    [AS_HELP_STRING([--with-rsh-launch],
+      [Enable rsh launch mode by default for startup modes that support it])],
+    [ENABLE_RSH_LAUNCH=1])
+  AC_ARG_WITH([rsh-cmd],
+    [AS_HELP_STRING([--with-rsh-cmd=EXE],
+      [Executable to use for rsh/ssh when running in rsh launch mode])],
+    [AC_DEFINE_UNQUOTED([RSHLAUNCH_CMD],"[${withval}]",[RSH command])])
+  AC_ARG_WITH([slurm-launch],
+    [AS_HELP_STRING([--with-slurm-launch],
+      [Enable using slurm to launch spindle daemons])],
+    [ENABLE_SLURM_LAUNCH=1])
+
+  AS_CASE([$sysconfdir],
+    [*/spindle],[PKGSYSCONF_DIR=$sysconfdir],
+    [*/spindle/],[PKGSYSCONF_DIR=$sysconfdir],
+    [PKGSYSCONF_DIR=$sysconfdir/spindle])
+
+  BROKEN_SRUN=0
+  bad_srun_major=20
+  bad_srun_minor=11
+  good_srun_major=0
+  good_srun_minor=0
+  if test "x$ENABLE_SLURM" == "xtrue"; then
+    AC_PATH_PROG(SRUN_PATH,"srun","none")
+    if test "x$SRUN_PATH" == "xnone"; then
+      AC_MSG_ERROR([Slurm support was requested but could not find srun in PATH])
+    fi
+    AC_MSG_CHECKING([slurm version for compatibility])
+    srun_version=`${SRUN_PATH} --version | cut -d ' ' -f 2`
+    srun_major=`echo $srun_version | cut -d . -f 1`
+    srun_minor=`echo $srun_version | cut -d . -f 2`
+    srun_point=`echo $srun_version | cut -d . -f 3`
+    if ( [[ "$srun_major" == "$bad_srun_major" ]] && [[ $srun_minor -ge $bad_srun_minor ]] ) || [[ $srun_major -gt $bad_srun_major ]] ; then BROKEN_SRUN=1; fi
+    if test "x$good_srun_major" != "x0"; then
+      if ( [[ "$srun_major" == "$good_srun_major" ]] && [[ $srun_minor -ge $good_srun_minor ]] ) || [[ $srun_major -gt $good_srun_major ]] ; then BROKEN_SRUN=0; fi
+    fi
+    if test "x$BROKEN_SRUN" == "x1"; then
+      AC_MSG_RESULT([no])
+    else
+      AC_MSG_RESULT([yes])
+    fi
+    if [[ "x$ENABLE_SLURM_LAUNCH" == "x1" ]] && [[ "x$BROKEN_SRUN" == "x1" ]] ; then
+      AC_MSG_WARN([Slurm launching was explicitly requested, but slurm $srun_version, which is later than $bad_srun_major.$bad_srun_minor, was detected.  This version of slurm breaks spindle daemon launch.  You might still be able to get spindle to work by running jobs with srun's --overlap option.  Or you could switch to having spindle launch daemons with rsh/ssh by passing the --with-rsh-launch option, and ensuring that rsh/ssh to nodes works on your cluster.])
+    fi
+    if [[ "x$ENABLE_RSH_LAUNCH" != "x1" ]] && [[ "x$ENABLE_SLURM_LAUNCH" != "x1" ]] && [[ "x$ENABLE_SLURM_PLUGIN" != "xtrue" ]] ; then
+      if test "x$BROKEN_SRUN" == "x1"; then
+        AC_MSG_ERROR([Slurm support was requested, but slurm $srun_version, which is later than $bad_srun_major.$bad_srun_minor, was detected.  This version of slurm breaks spindle daemon launch.  You can disable this error message and build spindle with slurm-based daemon launching anyways by explicitly passing the --with-slurm-launch option (you might still be able to get spindle to work by running jobs with srun's --overlap option).  Or you could switch to having spindle launch daemons with rsh/ssh by passing the --with-rsh-launch option, and ensuring that rsh/ssh to nodes works on your cluster.])
+      else
+        ENABLE_SLURM_LAUNCH=1
+      fi
+    fi
+  fi
+
+  if test "x$ENABLE_SLURM_LAUNCH" == "x1"; then
+    AC_DEFINE_UNQUOTED([SLURMLAUNCH_ENABLED],[1],[Default mode for slurm launch])
+  fi
+  if test "x$ENABLE_RSH_LAUNCH" == "x1"; then
+    AC_DEFINE_UNQUOTED([RSHLAUNCH_ENABLED],[1],[Default mode for rsh launch])
+  fi
+  # Bug fix: was unconditionally hardcoded to 1 regardless of the version check above.
+  AC_DEFINE_UNQUOTED([BROKEN_SRUN],[$BROKEN_SRUN],[Whether we are using a broken srun])
+])
+
+# ---------------------------------------------------------------------------
+# SPINDLE_OS_DETECT
+# BlueGene vs Linux OS mode, target architecture detection, and the
+# AM_CONDITIONALs that drive architecture-specific source file selection.
+# Bug fixes applied here:
+#   - ppc32/powerpc32 now correctly sets ARCH_BUILD=ppc32 (was ppc64)
+#   - Duplicate target_cpu spellings collapsed with || to avoid repeated
+#     AC_DEFINE calls
+# ---------------------------------------------------------------------------
+AC_DEFUN([SPINDLE_OS_DETECT],[
+  AC_REQUIRE([AC_CANONICAL_TARGET])
+
+  AC_ARG_ENABLE([bluegene],
+    [AS_HELP_STRING([--enable-bluegene],[Build Spindle for BlueGene/Q])],
+    [OS_BUILD=bluegene])
+  if test "x$OS_BUILD" == "x"; then
+    OS_BUILD=linux
+  fi
+
+  if test "x$target_cpu" == "xx86_64"; then
+    AC_DEFINE([arch_x86_64],[1],[Define if we're compiling for an x86_64 target])
+    ARCH_BUILD=x86_64
+  fi
+  if test "x$target_cpu" == "xppc64le" || test "x$target_cpu" == "xpowerpc64le"; then
+    AC_DEFINE([arch_ppc64le],[1],[Define if we're compiling for a ppc64le target])
+    ARCH_BUILD=ppc64le
+  fi
+  if test "x$target_cpu" == "xppc64" || test "x$target_cpu" == "xpowerpc64"; then
+    AC_DEFINE([arch_ppc64],[1],[Define if we're compiling for a ppc64 target])
+    ARCH_BUILD=ppc64
+  fi
+  if test "x$target_cpu" == "xppc32" || test "x$target_cpu" == "xpowerpc32"; then
+    AC_DEFINE([arch_ppc32],[1],[Define if we're compiling for a ppc32 target])
+    ARCH_BUILD=ppc32
+  fi
+  if test "x$target_cpu" == "xaarch64"; then
+    AC_DEFINE([arch_aarch64],[1],[Define if we're compiling for an aarch64 target])
+    ARCH_BUILD=aarch64
+  fi
+
+  AM_CONDITIONAL([BGQ_BLD],[test "x$OS_BUILD" == "xbluegene"])
+  AM_CONDITIONAL([LINUX_BLD],[test "x$OS_BUILD" == "xlinux"])
+  AM_CONDITIONAL([X86_64_BLD],[test "x$ARCH_BUILD" == "xx86_64"])
+  AM_CONDITIONAL([PPC64_BLD],[test "x$ARCH_BUILD" == "xppc64"])
+  AM_CONDITIONAL([PPC64LE_BLD],[test "x$ARCH_BUILD" == "xppc64le"])
+  AM_CONDITIONAL([AARCH64_BLD],[test "x$ARCH_BUILD" == "xaarch64"])
+
+  if test "x$OS_BUILD" == "xlinux"; then
+    AC_DEFINE([os_linux],[1],[Define if we're compiling for a linux target])
+  fi
+  if test "x$OS_BUILD" == "xbluegene"; then
+    AC_DEFINE([os_bluegene],[1],[Define if we're compiling for a BlueGene target])
+  fi
+])
+
+# ---------------------------------------------------------------------------
+# SPINDLE_COMM_MODE
+# Client/server (pipes/sockets/shmem/biter) and server/server
+# (cobo/msocket) communication mode selection.
+# Depends on SPINDLE_OS_DETECT for the OS_BUILD default.
+# ---------------------------------------------------------------------------
+AC_DEFUN([SPINDLE_COMM_MODE],[
+  AC_REQUIRE([SPINDLE_OS_DETECT])
+
+  if test "x$OS_BUILD" == "xlinux"; then
+    CLIENT_SERVER_COM=pipes
+  fi
+  if test "x$OS_BUILD" == "xbluegene"; then
+    CLIENT_SERVER_COM=biter
+  fi
+  SERVER_SERVER_COM=cobo
+
+  AC_ARG_ENABLE([pipes],
+    [AS_HELP_STRING([--enable-pipes],[Use pipes for server/client communication])],
+    [CLIENT_SERVER_COM=pipes])
+  AC_ARG_ENABLE([socket],
+    [AS_HELP_STRING([--enable-socket],[Use sockets for server/client communication])],
+    [CLIENT_SERVER_COM=sockets])
+  AC_ARG_ENABLE([shmem],
+    [AS_HELP_STRING([--enable-shmem],[Use shared memory for server/client communication])],
+    [CLIENT_SERVER_COM=shmem])
+  AC_ARG_ENABLE([biter],
+    [AS_HELP_STRING([--enable-biter],[Use biter for server/client communication])],
+    [CLIENT_SERVER_COM=biter])
+  AC_ARG_ENABLE([msocket],
+    [AS_HELP_STRING([--enable-msocket],[Use msocket for inter-server communication])],
+    [SERVER_SERVER_COM=msocket])
+  AC_ARG_ENABLE([cobo],
+    [AS_HELP_STRING([--enable-cobo],[Use cobo for inter-server communication])],
+    [SERVER_SERVER_COM=cobo])
+
+  AM_CONDITIONAL([PIPES],[test x$CLIENT_SERVER_COM == xpipes])
+  AM_CONDITIONAL([SOCKETS],[test x$CLIENT_SERVER_COM == xsocket])
+  AM_CONDITIONAL([SHMEM],[test x$CLIENT_SERVER_COM == xshmem])
+  AM_CONDITIONAL([BITER],[test x$CLIENT_SERVER_COM == xbiter])
+  AM_CONDITIONAL([MSOCKET],[test x$SERVER_SERVER_COM == xmsocket])
+  AM_CONDITIONAL([COBO],[test x$SERVER_SERVER_COM == xcobo])
+
+  if test "x$CLIENT_SERVER_COM" == "xpipes"; then
+    AC_DEFINE([COMM_PIPES],[1],[Define if using pipes for client/server communication])
+  fi
+  if test "x$CLIENT_SERVER_COM" == "xsocket"; then
+    AC_DEFINE([COMM_SOCKET],[1],[Define if using sockets for client/server communication])
+  fi
+  if test "x$CLIENT_SERVER_COM" == "xbiter"; then
+    AC_DEFINE([COMM_BITER],[1],[Define if using biter for client/server communication])
+  fi
+  if test "x$SERVER_SERVER_COM" == "xmsocket"; then
+    AC_DEFINE([COMM_MSOCKET],[1],[Define if using msocket for server/server communication])
+  fi
+  if test "x$SERVER_SERVER_COM" == "xcobo"; then
+    AC_DEFINE([COMM_COBO],[1],[Define if using cobo for server/server communication])
+  fi
+  AC_MSG_NOTICE([Communication is $CLIENT_SERVER_COM/$SERVER_SERVER_COM])
+])
+
+# ---------------------------------------------------------------------------
+# SPINDLE_OPTIONAL_FEATURES
+# Python prefix, NUMA, usage logging, dedicated cleanup process, subaudit.
+# Depends on SPINDLE_OS_DETECT for BlueGene cleanup-process forced-on logic.
+# ---------------------------------------------------------------------------
+AC_DEFUN([SPINDLE_OPTIONAL_FEATURES],[
+  AC_REQUIRE([SPINDLE_OS_DETECT])
+
+  # Python installation prefix list
+  AC_ARG_WITH([python-prefix],
+    [AS_HELP_STRING([--with-python-prefix=STR],
+      [List of directories containing python installs])],
+    [PYTHON_INST_PREFIX=${withval}],
+    [PYTHON_INST_PREFIX=/usr/lib/python:/usr/lib64/python])
+  AC_DEFINE_UNQUOTED([PYTHON_INST_PREFIX],"[$PYTHON_INST_PREFIX]",
+    [Python installation prefixes])
+
+  # NUMA optimizations
+  AC_ARG_ENABLE([numa],
+    [AS_HELP_STRING([--enable-numa],[Use libnuma to enable numa optimizations])],
+    [REQUIRE_NUMA=true])
+  AC_ARG_WITH([numa-excludes],
+    [AS_HELP_STRING([--with-numa-excludes],
+      [Do not numa optimize files matching the given substrings])],
+    [NUMA_EXCLUDES_VAL=${withval}],
+    [NUMA_EXCLUDES_VAL=""])
+  AC_MSG_CHECKING([whether we have libnuma])
+  ORIG_LIBS=$LIBS
+  LIBS="$LIBS -lnuma"
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <numa.h>],[numa_available();])],
+    [HAVE_NUMA=true; AC_MSG_RESULT([yes])],
+    [AC_MSG_RESULT([no])])
+  LIBS=$ORIG_LIBS
+  if test "x$REQUIRE_NUMA" == "xtrue"; then
+    if test "x$HAVE_NUMA" != "xtrue"; then
+      AC_MSG_ERROR([Could not link with libnuma, but numa required])
+    fi
+  fi
+  if test "x$HAVE_NUMA" == "xtrue"; then
+    AC_DEFINE([LIBNUMA],[1],[Use libnuma for numa optimizations])
+    AC_DEFINE_UNQUOTED([NUMA_EXCLUDES],"[$NUMA_EXCLUDES_VAL]",
+      [Exclusions for numa optimization])
+  fi
+
+  # Usage logging
+  AC_ARG_WITH([usage-logging],
+    [AS_HELP_STRING([--with-usage-logging=FILE],[File for writing usage logs])],
+    [USAGE_LOGS=${withval}])
+  if test "x$USAGE_LOGS" != "x"; then
+    AC_DEFINE_UNQUOTED([USAGE_LOGGING_FILE],"[$USAGE_LOGS]",
+      [The file for storing usage logs])
+  fi
+
+  # Dedicated cleanup process (forced on for BlueGene)
+  AC_ARG_ENABLE([cleanup-process],
+    [AS_HELP_STRING([--enable-cleanup-process],
+      [Default to using a dedicated process to clean relocated files])],
+    [CLEANUP_PROC=true])
+  if test "x$OS_BUILD" == "xbluegene"; then
+    CLEANUP_PROC=true
+  fi
+
+  # Subaudit interception default
+  AC_ARG_ENABLE([subaudit-as-default],
+    [AS_HELP_STRING([--enable-subaudit-as-default],
+      [Enable subaudit option as defaulted to on])],
+    [USE_SUBAUDIT_BY_DEFAULT=true])
+])
+
+# ---------------------------------------------------------------------------
+# SPINDLE_SEC_ARGS
+# Argument parsing for all security options.  Sets the WANT_* and
+# EXPLICIT_SEC variables consumed by CHOOSE_SEC, and SET_REMAP_FIRST_PAGE
+# consumed by CHECK_MMAP.  Must run before either of those macros.
+# ---------------------------------------------------------------------------
+AC_DEFUN([SPINDLE_SEC_ARGS],[
+  AC_DEFINE([KEY_SIZE_BYTES],[32],[Number of bytes in keys for gcrypt])
+
+  AC_ARG_ENABLE([sec-munge],
+    [AS_HELP_STRING([--enable-sec-munge],
+      [Enable munge for connection authentication])],
+    [WANT_MUNGE=true; EXPLICIT_SEC=true])
+  AC_ARG_ENABLE([sec-keydir],
+    [AS_HELP_STRING([--enable-sec-keydir=keydir],
+      [Enable filesystem directory 'keydir' to propagate authentication key for connections])],
+    [WANT_KEYFILE=true; SEC_KEYDIR=$enableval; EXPLICIT_SEC=true])
+  AC_ARG_ENABLE([sec-launchmon],
+    [AS_HELP_STRING([--enable-sec-launchmon],
+      [Enable LaunchMON to propagate authentication key for connections])],
+    [WANT_SECLMON=true; EXPLICIT_SEC=true])
+  AC_ARG_ENABLE([sec-none],
+    [AS_HELP_STRING([--enable-sec-none],
+      [Disable security authentication of connections])],
+    [WANT_NOSEC=true; EXPLICIT_SEC=true])
+
+  AC_ARG_WITH([gcrypt-dir],
+    [AS_HELP_STRING([--with-gcrypt-dir=DIR],[Look in DIR for gcrypt installation])],
+    [GCRYPT_CFLAGS="-I${withval}/include"; GCRYPT_LIBS="-L${withval}/lib"])
+  AC_ARG_WITH([munge-dir],
+    [AS_HELP_STRING([--with-munge-dir=DIR],[Look in DIR for munge installation])],
+    [MUNGE_DIR=${withval}])
+
+  AC_ARG_ENABLE([remap-pageone],
+    [AS_HELP_STRING([--enable-remap-pageone],
+      [Controls mmap behavior when replacing executables. Should be false on older linux systems])],
+    [SET_REMAP_FIRST_PAGE=$enableval])
+])
+
+# ---------------------------------------------------------------------------
+# SPINDLE_FLUX_DETECT
+# Probes for Flux via pkg-config and sets the final BLD_FLUXPLUGIN
+# AM_CONDITIONAL.  Must run after SPINDLE_RESOURCE_MANAGER (which sets
+# ENABLE_FLUX_PLUGIN from --enable-flux-plugin / --with-rm=flux).
+# ---------------------------------------------------------------------------
+AC_DEFUN([SPINDLE_FLUX_DETECT],[
+  AC_REQUIRE([SPINDLE_RESOURCE_MANAGER])
+
+  if test "x$ENABLE_FLUX_PLUGIN" = "xtrue"; then
+    PKG_CHECK_MODULES([FLUX_CORE],[flux-core > 0.40.0],[],[ENABLE_FLUX_PLUGIN=false])
+    PKG_CHECK_MODULES([FLUX_HOSTLIST],[flux-hostlist],[],[])
+    if test "x$ENABLE_FLUX_PLUGIN" = "xtrue"; then
+      AS_VAR_SET(shell_plugindir,$libdir)
+      AC_SUBST(shell_plugindir)
+      fluxplugin_ldflags="-export-symbols-regex '^flux_plugin_init\$\$' --disable-static -shared -export-dynamic"
+      AC_SUBST(fluxplugin_ldflags)
+    fi
+  fi
+  # Set the final conditional after pkg-config may have cleared ENABLE_FLUX_PLUGIN.
+  AM_CONDITIONAL([BLD_FLUXPLUGIN],[test "x$ENABLE_FLUX_PLUGIN" = "xtrue"])
+])
+
+# ---------------------------------------------------------------------------
+# SPINDLE_GLIBC_BUGS
+# Compiler-executed tests for two known glibc bugs that Spindle must work
+# around.  Uses $CC so results are valid for the target when cross-compiling.
+# ---------------------------------------------------------------------------
+AC_DEFUN([SPINDLE_GLIBC_BUGS],[
+  AC_REQUIRE([AC_PROG_CC])
+
+  AC_MSG_CHECKING([for glibc dtv allocation bug])
+  if ${SPINDLE_SOURCE_ROOT}/scripts/dtvtest/run_dtvtest.sh \
+       ${SPINDLE_SOURCE_ROOT}/scripts/dtvtest \
+       ${SPINDLE_BUILD_ROOT}/dtvtest '$CC' '$CFLAGS'; then
+    DTV_ALLOC_BUG=0
+    AC_MSG_RESULT([no])
+  else
+    DTV_ALLOC_BUG=1
+    AC_MSG_RESULT([yes])
+  fi
+  AC_DEFINE_UNQUOTED([DTV_ALLOCATION_BUG],[$DTV_ALLOC_BUG],
+    [Defined if GLIBC has an allocation bug])
+
+  AC_MSG_CHECKING([for locale tls fault glibc bug])
+  if ${SPINDLE_SOURCE_ROOT}/scripts/locale_tls_fault/tls_locale_fault.sh \
+       ${SPINDLE_SOURCE_ROOT}/scripts/locale_tls_fault \
+       ${SPINDLE_BUILD_ROOT}/locale_tls_fault $CC; then
+    LOCALE_FAULT_BUG=0
+    AC_MSG_RESULT([no])
+  else
+    LOCALE_FAULT_BUG=1
+    AC_MSG_RESULT([yes])
+  fi
+  AC_DEFINE_UNQUOTED([NEWTHREAD_LOCALE_BUG],[$LOCALE_FAULT_BUG],
+    [Defined if GLIBC has locale TLS bug])
+])
+
+# ---------------------------------------------------------------------------
+# SPINDLE_LDSO_PATCH
+# Probes whether it is safe to binary-patch ld.so on this system.
+# Uses $CC so the result is valid for the target when cross-compiling.
+# Bug fix: AC_LANG_POP was missing in the original inline code.
+# ---------------------------------------------------------------------------
+AC_DEFUN([SPINDLE_LDSO_PATCH],[
+  AC_REQUIRE([AC_PROG_CC])
+
+  AC_MSG_CHECKING([whether it is safe to binary patch ld.so on this system])
+  AC_LANG_PUSH(C)
+  if test -d ${srcdir}/scripts; then
+    rootsrcdir=${srcdir}
+  else
+    rootsrcdir=${srcdir}/../..
+  fi
+  auxdir=${rootsrcdir}/scripts
+  ${auxdir}/rewrite.sh ${rootsrcdir}/src . $CC
+  if test "x$?" == "x0"; then
+    AC_MSG_RESULT([yes])
+    PATCH_LDSO=1
+  else
+    AC_MSG_RESULT([no])
+    PATCH_LDSO=0
+  fi
+  AC_LANG_POP
+  AC_DEFINE_UNQUOTED([BINARY_PATCH_LDSO],[$PATCH_LDSO],
+    [Whether it is safe to patch ld.so])
+])
+
+# ---------------------------------------------------------------------------
+# SPINDLE_GLIBC_LOCATION
+# Determines the directory containing libc.so.6 on the back-end nodes.
+# This path is embedded as an rpath in audit client libraries.
+#
+# --with-glibc-be-dir=DIR is processed first so that it correctly overrides
+# auto-detection. Without this ordering, the override is silently ignored.
+# For heterogeneous clusters where compute nodes have glibc in a non-standard
+# location, --with-glibc-be-dir is the supported workaround.
+# ---------------------------------------------------------------------------
+AC_DEFUN([SPINDLE_GLIBC_LOCATION],[
+  AC_ARG_WITH([glibc-be-dir],
+    [AS_HELP_STRING([--with-glibc-be-dir=DIR],
+      [If glibc on compute nodes is installed in a non-standard location, then DIR is the directory containing libc.so.6])],
+    [GLIBC_BE_DIR=${withval}])
+
+  if test "x$GLIBC_BE_DIR" = "x"; then
+    # Get glibc location on front-end
+    CAT=`which cat`
+    LIBC_FILE=`ldd $CAT | grep libc | awk -F ' ' '{print $3}'`
+    GLIBC_BE_DIR=`dirname $LIBC_FILE`
+  fi
+  AC_MSG_NOTICE([glibc backend location set to $GLIBC_BE_DIR])
+  AC_SUBST([GLIBC_BE_DIR])
+])
+
+# ---------------------------------------------------------------------------
+# SPINDLE_STATIC_LINK
+# Probes whether -static linking works on this toolchain.
+# Sets STATICFLAG to -all-static on success, empty on failure.
+# Used by src/server to decide whether spindle_be can be fully static.
+# ---------------------------------------------------------------------------
+AC_DEFUN([SPINDLE_STATIC_LINK],[
+  AC_REQUIRE([AC_PROG_CC])
+
+  AC_MSG_CHECKING([whether static linking works])
+  OLD_LDFLAGS="$LDFLAGS"
+  LDFLAGS="$LDFLAGS -static"
+  AC_LANG_PUSH(C)
+  STATICFLAG=""
+  AC_LINK_IFELSE(
+    [AC_LANG_SOURCE([int main(int argc, char *argv[]) { return 0; }])],
+    [STATICFLAG="-all-static"; AC_MSG_RESULT([yes])],
+    [AC_MSG_RESULT([no])])
+  AC_LANG_POP
+  LDFLAGS=$OLD_LDFLAGS
+  AC_SUBST(STATICFLAG)
+])
+
+# ---------------------------------------------------------------------------
+# CHOOSE_SEC
+# Security backend selection and library detection.
+# Reads WANT_* / EXPLICIT_SEC variables set by SPINDLE_SEC_ARGS, then probes
+# for MUNGE and libgcrypt and selects which backends to enable.
+# ---------------------------------------------------------------------------
 AC_DEFUN([CHOOSE_SEC],[
-        AC_LANG_PUSH(C)
-        CFLAGS_HOLD=$CFLAGS
-        LIBS_HOLD=$LIBS
+  AC_REQUIRE([SPINDLE_SEC_ARGS])
+  AC_LANG_PUSH(C)
+  CFLAGS_HOLD=$CFLAGS
+  LIBS_HOLD=$LIBS
 
-        #Check for munge availability
-        if test "x$MUNGE_DIR" != "x"; then
-           MUNGE_CFLAGS=-I$MUNGE_DIR
-           MUNGE_LIBS="-L$MUNGE_DIR/lib -lmunge"
-        else
-           MUNGE_LIBS=-lmunge
-        fi
-        CFLAGS="$CFLAGS $MUNGE_CFLAGS"
-        AC_CHECK_HEADER([munge.h], [HAVE_MUNGE="true"], [HAVE_MUNGE="false"])
-        if test "x$HAVE_MUNGE" == "xtrue"; then
-          HAVE_MUNGE="false"
-          LIBS="$LIBS $MUNGE_LIBS"
-          AC_MSG_CHECKING([whether we have dynamic libmunge])
-          AC_LINK_IFELSE([AC_LANG_PROGRAM([extern void munge_encode();],[munge_encode();])],
-                         [HAVE_MUNGE="true";MUNGE_DYN_LIB=$MUNGE_LIBS;AC_MSG_RESULT([yes])], [AC_MSG_RESULT([no])])
-          AC_MSG_CHECKING([wheter we have a static libmunge])
-          MUNGE_STATIC_LIB=`$CC $MUNGE_LIBS --print-file-name=libmunge.a`
-          if test -f $MUNGE_STATIC_LIB; then
-            LIBS="$LIBS_HOLD $MUNGE_STATIC_LIB"
-            AC_LINK_IFELSE([AC_LANG_PROGRAM([extern int munge_encode();],[return munge_encode();])],
-                           [AC_MSG_RESULT([yes]); MUNGE_LIBS=$MUNGE_STATIC_LIB;HAVE_MUNGE="true"],
-                           [AC_MSG_RESULT([no])])
-          else
-            MUNGE_STATIC_LIB=""
-            AC_MSG_RESULT([no])
-          fi
-        fi
-        CFLAGS=$CFLAGS_HOLD
-        LIBS=$LIBS_HOLD
+  # Check for munge availability
+  if test "x$MUNGE_DIR" != "x"; then
+    MUNGE_CFLAGS=-I$MUNGE_DIR
+    MUNGE_LIBS="-L$MUNGE_DIR/lib -lmunge"
+  else
+    MUNGE_LIBS=-lmunge
+  fi
+  CFLAGS="$CFLAGS $MUNGE_CFLAGS"
+  AC_CHECK_HEADER([munge.h],[HAVE_MUNGE=true],[HAVE_MUNGE=false])
+  if test "x$HAVE_MUNGE" == "xtrue"; then
+    HAVE_MUNGE=false
+    LIBS="$LIBS $MUNGE_LIBS"
+    AC_MSG_CHECKING([whether we have dynamic libmunge])
+    AC_LINK_IFELSE([AC_LANG_PROGRAM([extern void munge_encode();],[munge_encode();])],
+      [HAVE_MUNGE=true; MUNGE_DYN_LIB=$MUNGE_LIBS; AC_MSG_RESULT([yes])],
+      [AC_MSG_RESULT([no])])
+    AC_MSG_CHECKING([whether we have a static libmunge])
+    MUNGE_STATIC_LIB=`$CC $MUNGE_LIBS --print-file-name=libmunge.a`
+    if test -f $MUNGE_STATIC_LIB; then
+      LIBS="$LIBS_HOLD $MUNGE_STATIC_LIB"
+      AC_LINK_IFELSE([AC_LANG_PROGRAM([extern int munge_encode();],[return munge_encode();])],
+        [AC_MSG_RESULT([yes]); MUNGE_LIBS=$MUNGE_STATIC_LIB; HAVE_MUNGE=true],
+        [AC_MSG_RESULT([no])])
+    else
+      MUNGE_STATIC_LIB=""
+      AC_MSG_RESULT([no])
+    fi
+  fi
+  CFLAGS=$CFLAGS_HOLD
+  LIBS=$LIBS_HOLD
 
-        #Check for libgcrypt availability
-        GCRYPT_LIBS="$GCRYPT_LIBS -lgcrypt -lgpg-error"
-        CFLAGS="$CFLAGS $GCRYPT_CFLAGS"
-        LIBS="$LIBS $GCRYPT_LIBS"
-        HAVE_GCRYPT="true"
-        AC_CHECK_HEADER([gcrypt.h], , [HAVE_GCRYPT="false"])
-        AC_CHECK_LIB(gcrypt, gcry_md_open, , [HAVE_GCRYPT="false"])
-        CFLAGS=$CFLAGS_HOLD
-        LIBS=$LIBS_HOLD
-        
-        #If the user didn't specify security options, then make some choices based on what we have
-        if test "x$EXPLICIT_SEC" != "xtrue"; then
-           if test "x$HAVE_MUNGE" == "xtrue"; then
-             MUNGE="true"
-           fi
-           if test "x$HAVE_GCRYPT" == "xtrue"; then
-             GCRYPT="true"
-             SECLMON="true"
-           fi
-        fi
+  # Check for libgcrypt availability
+  GCRYPT_LIBS="$GCRYPT_LIBS -lgcrypt -lgpg-error"
+  CFLAGS="$CFLAGS $GCRYPT_CFLAGS"
+  LIBS="$LIBS $GCRYPT_LIBS"
+  HAVE_GCRYPT=true
+  AC_CHECK_HEADER([gcrypt.h],,[HAVE_GCRYPT=false])
+  AC_CHECK_LIB(gcrypt,gcry_md_open,,[HAVE_GCRYPT=false])
+  CFLAGS=$CFLAGS_HOLD
+  LIBS=$LIBS_HOLD
 
-        if test "x$WANT_MUNGE" == "xtrue"; then
-           if test "x$HAVE_MUNGE" == "xtrue"; then
-              MUNGE="true"
-           else
-              AC_MSG_ERROR([Could not find munge])
-           fi
-        fi
+  # Auto-select backends if the user did not specify any --enable-sec-* flag
+  if test "x$EXPLICIT_SEC" != "xtrue"; then
+    if test "x$HAVE_MUNGE" == "xtrue"; then
+      MUNGE=true
+    fi
+    if test "x$HAVE_GCRYPT" == "xtrue"; then
+      GCRYPT=true
+      SECLMON=true
+    fi
+  fi
 
-        if test "x$WANT_KEYFILE" == "xtrue"; then
-           if test "x$HAVE_GCRYPT" == "xtrue"; then
-             KEYFILE="true"
-             GCRYPT="true"
-           else
-             AC_MSG_ERROR([Could not find gcrypt for keyfile authentication])
-           fi
-        fi
+  if test "x$WANT_MUNGE" == "xtrue"; then
+    if test "x$HAVE_MUNGE" == "xtrue"; then
+      MUNGE=true
+    else
+      AC_MSG_ERROR([Could not find munge])
+    fi
+  fi
+  if test "x$WANT_KEYFILE" == "xtrue"; then
+    if test "x$HAVE_GCRYPT" == "xtrue"; then
+      KEYFILE=true
+      GCRYPT=true
+    else
+      AC_MSG_ERROR([Could not find gcrypt for keyfile authentication])
+    fi
+  fi
+  if test "x$WANT_SECLMON" == "xtrue"; then
+    if test "x$HAVE_GCRYPT" == "xtrue"; then
+      SECLMON=true
+      GCRYPT=true
+    else
+      AC_MSG_ERROR([Could not find gcrypt for lmon authentication])
+    fi
+  fi
+  if test "x$WANT_NOSEC" == "xtrue"; then
+    ENABLE_NULL_ENCRYPTION=true
+  fi
 
-        if test "x$WANT_SECLMON" == "xtrue"; then
-           if test "x$HAVE_GCRYPT" == "xtrue"; then
-             SECLMON="true"
-             GCRYPT="true"
-           else
-             AC_MSG_ERROR([Could not find gcrypt for lmon authentication])
-           fi
-        fi
+  if test "x$MUNGE" != "xtrue"; then
+    MUNGE_CFLAGS=""
+    MUNGE_LIBS=""
+  fi
+  if test "x$KEYFILE x$SECLMON" == "x x"; then
+    GCRYPT_CFLAGS=""
+    GCRYPT_LIBS=""
+    GCRYPT=false
+  fi
 
-        if test "x$WANT_NOSEC" == "xtrue"; then
-           ENABLE_NULL_ENCRYPTION="true"
-        fi
+  AC_LANG_POP
+  AC_DEFINE_UNQUOTED([SEC_KEYDIR],"[$SEC_KEYDIR]",[Directory to store key files in])
+  AC_SUBST(GCRYPT_CFLAGS)
+  AC_SUBST(GCRYPT_LIBS)
+  AC_SUBST(MUNGE_CFLAGS)
+  AC_SUBST(MUNGE_LIBS)
+  AC_SUBST(MUNGE_DYN_LIB)
+  if test "x$MUNGE" == "xtrue"; then
+    AC_MSG_NOTICE([Enabling munge for security authentication])
+    AC_DEFINE([MUNGE],[1],[Use munge for authentication])
+  fi
+  if test "x$GCRYPT" == "xtrue"; then
+    AC_DEFINE([GCRYPT],[1],[Enable gcrypt for authentication])
+  fi
+  if test "x$KEYFILE" == "xtrue"; then
+    AC_MSG_NOTICE([Enabling keyfile for security authentication])
+    AC_DEFINE([KEYFILE],[1],[Use keyfile for authentication])
+  fi
+  if test "x$SECLMON" == "xtrue"; then
+    AC_MSG_NOTICE([Enabling LaunchMON key for security authentication])
+    AC_DEFINE([SECLMON],[1],[Use LaunchMON for authentication])
+  fi
+  if test "x$ENABLE_NULL_ENCRYPTION" == "xtrue"; then
+    AC_MSG_NOTICE([Enabling NULL encryption])
+    AC_DEFINE([ENABLE_NULL_ENCRYPTION],[1],[Allow NULL encryption])
+  fi
+])
 
-        if test "x$MUNGE" != "xtrue"; then
-           MUNGE_CFLAGS=""
-           MUNGE_LIBS=""
-        fi
-        if test "x$KEYFILE x$SECLMON" == "x x"; then
-           GCRYPT_CFLAGS=""
-           GCRYPT_LIBS=""
-           GCRYPT="false"           
-        fi
+# ---------------------------------------------------------------------------
+# CHOOSE_DEF_AUDIT
+# Selects whether subaudit is on by default.
+# Reads USE_SUBAUDIT_BY_DEFAULT set by SPINDLE_OPTIONAL_FEATURES.
+# ---------------------------------------------------------------------------
+AC_DEFUN([CHOOSE_DEF_AUDIT],[
+  AC_REQUIRE([SPINDLE_OPTIONAL_FEATURES])
+  AC_LANG_PUSH(C)
+  AC_MSG_CHECKING([set subaudit as defaulted to on...])
+  if test "x$USE_SUBAUDIT_BY_DEFAULT" != "x"; then
+    AC_MSG_NOTICE([yes])
+    AC_DEFINE([USE_SUBAUDIT_BY_DEFAULT],[1],[Use subaudit by default])
+  else
+    AC_MSG_NOTICE([no])
+  fi
+  AC_LANG_POP
+])
 
-        AC_LANG_POP
-        AC_DEFINE_UNQUOTED([SEC_KEYDIR], "[$SEC_KEYDIR]",[Directory to store key files in])
-        AC_SUBST(GCRYPT_CFLAGS)
-        AC_SUBST(GCRYPT_LIBS)
-        AC_SUBST(MUNGE_CFLAGS)
-        AC_SUBST(MUNGE_LIBS)
-        AC_SUBST(MUNGE_DYN_LIB)
-        if test "x$MUNGE" == "xtrue"; then
-           AC_MSG_NOTICE([Enabling munge for security authentication])        
-           AC_DEFINE([MUNGE], [1], [Use munge for authentication])
-        fi
-        if test "x$GCRYPT" == "xtrue"; then
-           AC_DEFINE([GCRYPT], [1], [Enable gcrypt for authentication])
-        fi
-        if test "x$KEYFILE" == "xtrue"; then
-           AC_MSG_NOTICE([Enabling keyfile for security authentication])
-           AC_DEFINE([KEYFILE], [1], [Use keyfile for authentication])
-        fi
-        if test "x$SECLMON" == "xtrue"; then
-           AC_MSG_NOTICE([Enabling LaunchMON key for security authentication])
-           AC_DEFINE([SECLMON], [1], [Use LaunchMON for authentication"]) 
-        fi
-        if test "x$ENABLE_NULL_ENCRYPTION" == "xtrue"; then
-           AC_MSG_NOTICE([Enabling NULL encryption]);
-           AC_DEFINE([ENABLE_NULL_ENCRYPTION], [1], [Allow NULL encryption])
-        fi])
+# ---------------------------------------------------------------------------
+# CHECK_MMAP([suffix])
+# Determines whether the first page of an executable can be remapped.
+# Reads SET_REMAP_FIRST_PAGE set by SPINDLE_SEC_ARGS (--enable-remap-pageone).
+# Falls back to a uname -r kernel version heuristic if empirical tests are
+# inconclusive (kernel 2.x => cannot remap).
+# ---------------------------------------------------------------------------
+AC_DEFUN([CHECK_MMAP],[
+  AC_REQUIRE([SPINDLE_SEC_ARGS])
+  AC_MSG_CHECKING([whether to remap first pages])
+  if test "x$SET_REMAP_FIRST_PAGE" != "x"; then
+    REMAP_FIRST_PAGE=$SET_REMAP_FIRST_PAGE
+  else
+    AC_LANG_PUSH(C)
+    REMAP_FIRST_PAGE=unknown
+    OLD_CFLAGS=$CFLAGS
+    tmp=.
+    if test -d ${srcdir}/scripts; then
+      auxdir=${srcdir}/scripts
+    else
+      auxdir=${srcdir}/../../scripts
+    fi
+    CFLAGS="$CFLAGS -I${srcdir} -L${tmp}"
 
+    if test "x$REMAP_FIRST_PAGE" == "xunknown"; then
+      ${auxdir}/remap.sh ${tmp} ${auxdir}/.. "$CC $CFLAGS $LDFLAGS" $1
+      if test "x$?" == "x0"; then
+        REMAP_FIRST_PAGE=true
+      fi
+    fi
+    if test "x$REMAP_FIRST_PAGE" == "xunknown"; then
+      ${auxdir}/remap.sh ${tmp} ${auxdir}/.. "$CC -DREMAP_LEAVE_FIRST_PAGE $CFLAGS $LDFLAGS" x$1
+      if test "x$?" == "x0"; then
+        REMAP_FIRST_PAGE=false
+      fi
+    fi
+    if test "x$REMAP_FIRST_PAGE" == "xunknown"; then
+      uname_result=`uname -r`
+      if [[ "${uname_result:0:1}" == "2" ]]; then
+        REMAP_FIRST_PAGE=false
+      else
+        REMAP_FIRST_PAGE=true
+      fi
+    fi
+    CFLAGS=$OLD_CFLAGS
+    AC_LANG_POP
+  fi
+  if test "x$REMAP_FIRST_PAGE" == "xtrue"; then
+    AC_MSG_RESULT([yes])
+  elif test "x$REMAP_FIRST_PAGE" == "xfalse"; then
+    AC_MSG_RESULT([no])
+  else
+    AC_MSG_ERROR([Could not determine whether to leave or remap the first page when replacing executables])
+  fi
+])
