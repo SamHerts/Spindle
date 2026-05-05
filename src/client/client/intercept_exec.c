@@ -71,7 +71,7 @@ static int shouldPropogateSpindle(char **envp, const char *fname)
    }
    
    spindle = orig_getenv ? orig_getenv("SPINDLE") : getenv("SPINDLE");
-   if (spindle && (strcasecmp(spindle, "false") == 0 || strcmp("spindle", "0") == 0)) {
+   if (spindle && (strcasecmp(spindle, "false") == 0 || strcmp(spindle, "0") == 0)) {
       debug_printf2("Not propogating spindle through exec because getenv(\"SPINDLE\") = %s\n", spindle);
       return 0;
    }

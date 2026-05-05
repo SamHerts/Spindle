@@ -266,6 +266,7 @@ public:
    {
       if (strstr(filename, ".so") == NULL &&
           strstr(filename, "retzero") == NULL &&
+          strstr(filename, "bin") == NULL &&          
           strstr(filename, ".py") == NULL)
          return true;
       bool is_from_temp = (strstr(filename, location) != NULL) && (strncmp(filename, "/__not_exist", 12) != 0);

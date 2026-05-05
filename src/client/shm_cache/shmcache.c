@@ -380,6 +380,7 @@ static int shmcache_add_worker(const char *libname, const char *mapped_name, int
       if (!mappedname_str) {
          free_sheep_entry(entry);
          free_sheep_str(libname_str);
+         return -1;
       }
       strncpy(mappedname_str, mapped_name, mappedname_len);
    }

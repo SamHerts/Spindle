@@ -24,6 +24,7 @@ extern "C" {
 #endif
 
 int parseFilenameNoAlloc(const char *name, char *file, char *dir, int result_size);
+int parseFilenameNoAlloc2(const char *name, char *file, char *dir, int result_size, pid_t pid);
 int addCWDToDir(pid_t pid, char *dir, int result_size);
 int reducePath(char *dir);
 char *concatStrings(const char *str1, int str1_len, const char *str2, int str2_len);

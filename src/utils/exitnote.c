@@ -181,7 +181,7 @@ int pingExitNote(const char *location)
   done:
    if (socketpath)
       free(socketpath);
-   if (sockfd)
+   if (sockfd != -1)
       close(sockfd);
 
    return presult;   

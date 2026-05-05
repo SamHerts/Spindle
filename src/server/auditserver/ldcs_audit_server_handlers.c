@@ -312,11 +312,11 @@ static int handle_client_myrankinfo_msg(ldcs_process_data_t *procdata, int nc, l
  **/
 static int handle_client_file_request(ldcs_process_data_t *procdata, int nc, ldcs_message_t *msg)
 {
-   char *pathname;
+   char *pathname, *last_slash;
    char file[MAX_PATH_LEN];
    char dir[MAX_PATH_LEN];
    int is_stat, is_lstat;
-   int is_loader, is_dso;
+   int is_loader, is_dso, dir_ends_w_slash = 0;
 
    file[0] = '\0'; dir[0] = '\0';
    pathname = msg->data;
@@ -331,21 +331,23 @@ static int handle_client_file_request(ldcs_process_data_t *procdata, int nc, ldc
       debug_printf3("Remapping request of %s --> %s\n", pathname, globalname);
       pathname = globalname;
    }
-   
-   parseFilenameNoAlloc(pathname, file, dir, MAX_PATH_LEN);
 
-   /* do initial check of query, parse the filename and store info */
    assert(nc != -1);
    ldcs_client_t *client = procdata->client_table + nc;
-   addCWDToDir(client->remote_pid, dir, MAX_PATH_LEN);
-   reducePath(dir);
+
+   /* do initial check of query, parse the filename and store info */   
+   parseFilenameNoAlloc2(pathname, file, dir, MAX_PATH_LEN, client->remote_pid);
+
+   last_slash = strrchr(dir, '/');
+   dir_ends_w_slash = (last_slash && last_slash[1] == '\0');
 
    GCC7_DISABLE_WARNING("-Wformat-truncation");
    GCC7_DISABLE_WARNING("-Wstringop-overflow");
    strncpy(client->query_filename, file, MAX_PATH_LEN+1);
    strncpy(client->query_dirname, dir, MAX_PATH_LEN+1);
-   snprintf(client->query_globalpath, MAX_PATH_LEN+1, "%s/%s", 
-            client->query_dirname, client->query_filename);
+   debug_printf3("dirname = '%s'\n", client->query_dirname);
+   snprintf(client->query_globalpath, MAX_PATH_LEN+1, "%s%s%s", 
+            client->query_dirname, dir_ends_w_slash ? "" : "/", client->query_filename);
    GCC7_ENABLE_WARNING;
    GCC7_ENABLE_WARNING;
    
@@ -376,8 +378,8 @@ static handle_file_result_t handle_howto_directory(ldcs_process_data_t *procdata
    int responsible;
 
    cache_dir_result = ldcs_cache_findDirInCache(dir);
-   debug_printf2("Looked for dir in cache... %s\n",
-                 ldcs_cache_result_to_str(cache_dir_result));
+   debug_printf2("Looked for dir %s in cache... %s\n",
+                 dir, ldcs_cache_result_to_str(cache_dir_result));
 
    if (cache_dir_result == LDCS_CACHE_DIR_PARSED_AND_EXISTS) {
       /* Directory was found */
@@ -2254,24 +2256,27 @@ static int handle_fileexist_test(ldcs_process_data_t *procdata, int nc)
 static int handle_client_fileexist_msg(ldcs_process_data_t *procdata, int nc, ldcs_message_t *msg)
 {
    ldcs_client_t *client;
-   char *pathname;
+   char *pathname, *last_slash;
    char file[MAX_PATH_LEN];
    char dir[MAX_PATH_LEN];
+   int dir_ends_w_slash;
 
    file[0] = '\0'; dir[0] = '\0';
    pathname = msg->data;
-   parseFilenameNoAlloc(pathname, file, dir, MAX_PATH_LEN);
 
    assert(nc != -1);
    client = procdata->client_table + nc;
-   addCWDToDir(client->remote_pid, dir, MAX_PATH_LEN);
-   reducePath(dir);
+   parseFilenameNoAlloc2(pathname, file, dir, MAX_PATH_LEN, client->remote_pid);
+
+   last_slash = strrchr(dir, '/');
+   dir_ends_w_slash = (last_slash && last_slash[1] == '\0');
 
    GCC7_DISABLE_WARNING("-Wformat-truncation");
    strncpy(client->query_filename, file, MAX_PATH_LEN);
    strncpy(client->query_dirname, dir, MAX_PATH_LEN);
 
-   snprintf(client->query_globalpath, MAX_PATH_LEN, "%s/%s", client->query_dirname, client->query_filename);
+   snprintf(client->query_globalpath, MAX_PATH_LEN, "%s%s%s", client->query_dirname,
+            dir_ends_w_slash ? "" : "/", client->query_filename);
    GCC7_ENABLE_WARNING
       
    client->query_localpath = NULL;

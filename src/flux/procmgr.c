@@ -96,7 +96,7 @@ int init_readymsg()
    int result, error;
    result = pipe(ready_pipe);
    if (result == -1) {
-      error = result;
+      error = errno;
       fprintf(stderr, "Could not create ready pipe for spindle session: %s\n", strerror(error));
       return -1;
    }
@@ -216,7 +216,7 @@ static int read_pidfile(const char *name, const char *session_dir)
    
    snprintf(session_path, sizeof(session_path), "%s/%s.pid", session_dir, name);
    session_path[sizeof(session_path)-1] = '\0';
-   f = fopen(session_path, "w");
+   f = fopen(session_path, "r");
    if (!f) {
       error = errno;
       fprintf(stderr, "Error reading pid file for spindle service at %s: %s\n", session_path, strerror(error));

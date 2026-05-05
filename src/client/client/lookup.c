@@ -213,7 +213,7 @@ int get_existance_test(int fd, const char *path, int *exists)
       found_file = check_cache(path, "&", cache_name, dir_name, ENOENT, &errcode, &exist_str);
       if (found_file) {
          *exists = (exist_str && *exist_str == 'y');
-         spindle_free(exist_str);
+         spindle_free(exist_str); // malloc'd in check_cache
          return 0;
       }
    }
@@ -226,7 +226,6 @@ int get_existance_test(int fd, const char *path, int *exists)
    if (use_cache) {
       exist_str = *exists ? "y" : "n";
       update_cache(cache_name, dir_name, exist_str, &errcode, ENOENT);
-      spindle_free(exist_str);
    }
 
    return result;

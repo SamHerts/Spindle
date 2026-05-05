@@ -362,7 +362,7 @@ static int parse_yesno(opt_t *opt, opt_t flag, const char *yesno)
    if (strcasecmp(yesno, "no") == 0 || strcasecmp(yesno, "false") == 0 || strcasecmp(yesno, "0") == 0)
       *opt &= ~flag;
    else if (strcasecmp(yesno, "yes") == 0 || strcasecmp(yesno, "true") == 0 || strcasecmp(yesno, "1") == 0)
-      *opt |= 1;
+      *opt |= flag;
    else
       logerrno_printf_and_return(1, "Error in spindle option: Expected 'yes' or 'no', got %s\n", yesno);
    return 0;

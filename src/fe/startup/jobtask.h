@@ -48,7 +48,7 @@ public:
    }
 
    ~JobTask() {
-      if (app_argc & !noclean) {
+      if (app_argc && !noclean) {
          for (int i = 0; i < app_argc; i++)
             free(app_argv[i]);
          free(app_argv);

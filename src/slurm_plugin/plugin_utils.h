@@ -38,6 +38,7 @@ int decodeSpindleConfig(const char *encodedstr,
                         unsigned int *port, unsigned int *num_ports, uint64_t *unique_id, uint32_t *security_type,
                         int *spindle_argc, char ***spindle_argv);
 
+int srunAllNodes(unsigned int num_nodes, const char *command);
 char **getHostsScontrol(unsigned int num_hosts, const char *hoststr);
 char **getHostAddrSinfo(unsigned int num_hosts, char **hostlist);
 char **getHostsParse(unsigned int num_hosts, const char *shortlist);
@@ -45,6 +46,10 @@ char **getHostsParse(unsigned int num_hosts, const char *shortlist);
 int isFEHost(char **hostlist, unsigned int num_hosts);
 extern char *unique_file;
 int isBEProc(spindle_args_t *params, unsigned int exit_phase);
+
+int doesFEExitSocketExist(spindle_args_t *params);
+int waitForSpankSessionEnd(spindle_args_t *params);
+int signalSpankSessionEnd(spindle_args_t *params);
 
 char *encodeCmdArgs(int sargc, char **sargv);
 void decodeCmdArgs(char *cmd, int *sargc, char ***sargv);

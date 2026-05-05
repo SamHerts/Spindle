@@ -72,7 +72,12 @@ int parseFilenameNoAlloc(const char *name, char *file, char *dir, int result_siz
       if (size >= result_size)
          size = result_size-1;
       strncpy(dir, name, size);
-      dir[size] = '\0'; 
+      if (size == 0 && last_slash == name) {
+         dir[0] = '/';
+         size = 1;
+      }
+      dir[size] = '\0';
+         
    }
    else {
       strncpy(file, name, result_size);
@@ -92,6 +97,9 @@ int reducePath(char *dir)
    int dir_len = strlen(dir);
    char tmpdir[MAX_PATH_LEN+1];
 
+   if (strcmp(dir, "/") == 0)
+      return 0;
+   
    while (dir[slash_begin]) {
       slash_end = slash_begin+1;
       while (dir[slash_end] != '\0' && dir[slash_end] != '/') slash_end++;
@@ -135,5 +143,106 @@ char *concatStrings(const char *str1, int str1_len, const char *str2, int str2_l
    buffer[str1_len+str2_len] = '\0';
 
    return buffer;
+}
+
+static int addCWD(pid_t pid, const char *dir, char *target, int result_size)
+{
+   char cwd_loc[64];
+   int result;
+   
+   if (dir[0] == '/')
+      return 0;
+   
+   snprintf(cwd_loc, sizeof(cwd_loc)-1, "/proc/%d/cwd", pid);
+   result = readlink(cwd_loc, target, result_size-1);
+   if (result == -1) {
+      int error = errno;
+      err_printf("Could not read CWD from %s: %s\n", cwd_loc, strerror(error));
+      return -1;
+   }
+   return 0;
+}
+
+int parseFilenameNoAlloc2(const char *name, char *file, char *dir, int result_size, pid_t pid)
+{
+   int result;
+   int dir_end, is_absolute, cur, last_slash;
+   int component_start, component_end, component_size;   
+   char path_component[MAX_PATH_LEN];
+   
+   memset(file, 0, result_size);
+   memset(dir, 0, result_size);
+
+   is_absolute = name[0] == '/';
+
+   /* Add CWD to 'dir' if we're a relative path */
+   if (!is_absolute) {
+      result = addCWD(pid, name, dir, result_size);
+      if (result == -1) {
+         err_printf("Aborting path parsing of %s\n", name);
+         return -1;
+      }
+      dir_end = strlen(dir);
+      if (dir_end > 1 && dir[dir_end-1] != '/') {
+         dir[dir_end] = '/';
+         dir_end++;
+      }
+   }
+   else {
+      dir[0] = '/';
+      dir_end = 1;
+   }
+
+   /* Go through each path component in 'name' and add it to 'dir'. Resolve ./ and ////
+      path components as we do so. 
+      Do not resolve .. path components. That needs readlink access to do correctly.
+   */
+   cur = 0;
+   while (name[cur] != '\0') {
+      while (name[cur] == '/') cur++;
+      component_start = cur;
+      if (name[component_start] == '\0')
+         break;
+      while (name[cur] != '/' && name[cur] != '\0') cur++;
+      component_end = cur;
+      component_size = component_end - component_start;
+      strncpy(path_component, name+component_start, component_size);
+      path_component[component_size] = '\0';
+
+      if (strcmp(path_component, ".") == 0) {
+         //Nothing needed
+      }
+      /*
+        else if (strcmp(path_component, "..") == 0) {
+         while (dir_end > 1 && dir[dir_end-1] == '/') dir_end--;
+         while (dir_end > 1 && dir[dir_end-1] != '/') dir_end--;         
+         dir[dir_end] = '\0';
+      }
+      */
+      else if (path_component[0] != '\0') {
+         strncpy(dir+dir_end, path_component, component_size);
+         dir_end += component_size;
+         dir[dir_end] = '/';
+         dir_end++;
+         dir[dir_end] = '\0';
+      }
+   }
+   /* Remove the trailing slash we always added to the end of dir. */
+   if (dir_end > 1 && dir[dir_end-1] == '/')
+      dir[dir_end-1] = '\0';
+   
+   /* Copy the final component out of dir and to file */
+   last_slash = dir_end;
+   while (last_slash > 0 && dir[last_slash] != '/') last_slash--;
+   strncpy(file, dir+last_slash+1, result_size);
+
+   /* Truncate that final slash that seperated the dir and file 
+      (unless it's a root file system file/dir like "/bin" */
+   if (last_slash > 0) 
+      dir[last_slash] = '\0';
+   else
+      dir[1] = '\0';
+
+   return 0;
 }
 

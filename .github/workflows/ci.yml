@@ -8,7 +8,6 @@ on:
   pull_request:
     branches:
       - devel
-      - arm64_CI
 
 permissions:
   contents: read
@@ -29,7 +28,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Setup Docker Compose
-        uses: docker/setup-compose-action@364cc21a5de5b1ee4a7f5f9d3fa374ce0ccde746
+        uses: docker/setup-compose-action@8cccb8c14b6500aaffebff1aa49c502c34d2e5e6
         with:
           version: latest
 
@@ -117,7 +116,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Setup Docker Compose
-        uses: docker/setup-compose-action@364cc21a5de5b1ee4a7f5f9d3fa374ce0ccde746
+        uses: docker/setup-compose-action@8cccb8c14b6500aaffebff1aa49c502c34d2e5e6
         with:
           version: latest
 
@@ -166,13 +165,13 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Setup Docker Compose
-        uses: docker/setup-compose-action@364cc21a5de5b1ee4a7f5f9d3fa374ce0ccde746
+        uses: docker/setup-compose-action@8cccb8c14b6500aaffebff1aa49c502c34d2e5e6
         with:
           version: latest
 
       - name: Login to GitHub Container Registry
         if: ${{ !env.ACT }}
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -221,16 +220,16 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Check out Spindle
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Setup Docker Compose
-        uses: docker/setup-compose-action@364cc21a5de5b1ee4a7f5f9d3fa374ce0ccde746
+        uses: docker/setup-compose-action@8cccb8c14b6500aaffebff1aa49c502c34d2e5e6
         with:
           version: latest
 
       - name: Login to GitHub Container Registry
         if: ${{ !env.ACT }}
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -263,6 +262,11 @@ jobs:
         id: slurm-ubuntu-testsuite
         run: |
           docker exec slurm-plugin-head bash -c 'cd Spindle-build/testsuite && salloc -n${workers} -N${workers} ./runTests ${workers}'
+
+      - name: Run spindle-slurm-plugin-ubuntu session testsuite
+        id: slurm-ubuntu-testsuite-sessions
+        run: |
+          docker exec slurm-plugin-head bash -c 'cd Spindle-build/testsuite && salloc -n${workers} -N${workers} --spindle-session ./runTests ${workers}'
 
       - name: Bring spindle-slurm-plugin-ubuntu down
         id: slurm-ubuntu-down

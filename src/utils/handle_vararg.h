@@ -44,6 +44,7 @@
                errno = ENOMEM;                                          \
                return -1;                                               \
             }                                                           \
+            argv = newp;                                                \
          }                                                              \
       }                                                                 \
                                                                         \

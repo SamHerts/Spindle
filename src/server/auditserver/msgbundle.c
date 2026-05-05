@@ -135,7 +135,7 @@ static void *thrd_main(void *timeout)
       do {
          debug_printf2("Triggering message buffer cache flush due to timeout\n");
          result = write(flush_pipe[1], "f", 1);
-      } while (result == EINTR);
+      } while (result == -1 && errno == EINTR); 
 
       pthread_mutex_lock(&mut);
       active_timeout = 0;

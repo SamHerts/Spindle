@@ -356,7 +356,8 @@ BUILT_SOURCES = libtest10.so libtest11.so libtest12.so libtest13.so \
 	retzero_r retzero_x retzero_ badinterp hello_r.py hello_x.py \
 	hello_rx.py hello_.py hello_l.py badlink.py spindle_exec_test \
 	spindle_deactivated.sh liblocal.so symbind_test \
-	interpreter_test interpreter_test_dir/interpreter_test_perl
+	interpreter_test interpreter_test_dir/interpreter_test_perl \
+	alias/aliastest.py
 @BGQ_BLD_FALSE@DYNAMIC_FLAG = 
 @BGQ_BLD_TRUE@DYNAMIC_FLAG = -dynamic
 @BGQ_BLD_FALSE@IS_BLUEGENE = false
@@ -396,7 +397,7 @@ CLEANFILES = libtest10.c libtest11.c libtest12.c libtest13.c \
 	libsymbind_a.so libsymbind_b.so libsymbind_c.so \
 	libsymbind_d.so libsymbind_e.so libsymbind_f.so \
 	libsymbind_g.so interpreter_test \
-	interpreter_test_dir/interpreter_test_perl
+	interpreter_test_dir/interpreter_test_perl alias
 all: $(BUILT_SOURCES)
 	$(MAKE) $(AM_MAKEFLAGS) all-am
 
@@ -1055,6 +1056,9 @@ badlink.py:
 		if [ $V ]; then echo ln -fs noexist.py $@; else echo "  GEN      $@"; fi; \
 		ln -fs noexist.py $@; \
 	fi
+
+alias/aliastest.py: 
+	$(AM_V_GEN)mkdir -p alias/real1/real2 ; echo "fail" > alias/aliastest.py ; echo "pass" > alias/real1/aliastest.py ; ln -s real1/real2 alias/lnk
 
 spindle_deactivated.sh: spindle_deactivated_template.sh
 	$(AM_V_GEN)cp $< $@; chmod 700 $@

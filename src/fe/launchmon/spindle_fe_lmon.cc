@@ -115,7 +115,7 @@ static bool rank_lt(const MPIR_PROCDESC_EXT &a, const MPIR_PROCDESC_EXT &b) {
 }
 
 struct str_lt {
-   bool operator()(const char *a, const char *b) { return strcmp(a, b) < 0; }
+   bool operator()(const char *a, const char *b) const noexcept { return strcmp(a, b) < 0; }
 };
 
 const char **LMonLauncher::getProcessTable()

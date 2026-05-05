@@ -827,6 +827,7 @@ static int run_execs()
 #define STAT 1
 #define LSTAT 2
 #define FSTAT 4
+#define SPINDLE_STAT 8
 static dev_t device;
 static int run_stat_test(const char *file, int flags, mode_t prot, int expected)
 {
@@ -836,7 +837,7 @@ static int run_stat_test(const char *file, int flags, mode_t prot, int expected)
    const char *statname = NULL;
 
    if (expected == 0)
-      test_printf("dlstart %s\n", file);
+      test_printf("dlstart %s\n", file[0] != '/' ? file : file+1);
    if (flags & LSTAT) {
       statname = "lstat";
       result = lstat(file, &buf);
@@ -851,21 +852,25 @@ static int run_stat_test(const char *file, int flags, mode_t prot, int expected)
       statname = "stat";      
       result = stat(file, &buf);
    }
+   else if (flags & SPINDLE_STAT) {
+      statname = "spindle_stat";
+      result = spindle_stat(file, &buf);
+   }
    if (result == -1)
       result = errno;
    if (fd != -1)
       close(fd);
    
    if (result != expected) {
-      err_printf("Expected return value %d, got return value %d from %s test of %s\n",
-                 expected, result, statname, file);
+      err_printf("Expected return value %d, got return value %d (%s) from %s test of %s\n",
+                 expected, result, strerror(result), statname, file);
       return -1;
    }
    if (result)
       //Expected error return, do not test buf
       return 0;
    
-   if (buf.st_dev != device) {
+   if (buf.st_dev != device && !(flags & SPINDLE_STAT)) {
       err_printf("Expected device %d, got device %d on %s test of %s\n",
                  (int) device, (int) buf.st_dev, statname, file);
       return -1;
@@ -875,7 +880,7 @@ static int run_stat_test(const char *file, int flags, mode_t prot, int expected)
                  prot, buf.st_mode & 0700, statname, file);
       return -1;      
    }
-
+   
    return 0;
 }
 
@@ -937,6 +942,8 @@ static int run_stats()
    result |= run_stat_test("badlink.py", LSTAT, 0700, 0);
    result |= run_stat_test(".", LSTAT, 0000, 0);
    result |= run_stat_test(NULL, LSTAT, 0000, EFAULT);
+
+   result |= run_stat_test("/bin", SPINDLE_STAT, 0000, 0);
    
    return result;
 }
@@ -1022,6 +1029,88 @@ static int run_readlinks()
    return result;
 }
 
+static int run_alias_test(char *path, int expected_err) {
+   int fd, result, error;
+   char buffer[5];
+   fd = open(path, O_RDONLY);
+   if (fd == -1) {
+      error = errno;
+      if (!expected_err) {
+         err_printf("alias_test %s: open expected success, but got error %s (%d)\n", path, strerror(error), error);
+         return -1;
+      }
+      else if (error != expected_err) {
+         err_printf("alias_test %s: open returned wrong error. Expected %s (%d), got %s (%d)\n",
+                    path, strerror(expected_err), expected_err, strerror(error), error);
+         return -1;
+      }
+      else {
+         return 0;
+      }
+   }
+   if (fd >= 0 && expected_err) {
+      err_printf("alias_test %s: open expected error %s (%d), but returned succcess\n", path, strerror(expected_err), expected_err);
+      close(fd);
+      return -1;
+   }
+
+   result = read(fd, buffer, 4);
+   if (result == -1) {
+      error = errno;
+      err_printf("alias_test %s: error reading from buffer: %s (%d)\n", path, strerror(error), error);
+      close(fd);
+      return -1;
+   }
+
+   buffer[4] = '\0';
+   if (strcmp(buffer, "pass") != 0) {
+      err_printf("alias_test %s: Did not read correct file. Got string '%s' from file\n", path, buffer);
+      close(fd);
+      return -1;
+   }
+
+   close(fd);
+   return 0;
+}
+
+int run_alias_tests()
+{
+   int result = 0, i;
+   int slashes_in_cwd = 0;
+   char path[4096];
+   char cwd[4096];
+   char slashes[4096];
+
+   if (chdir_mode)
+      return 0;
+   
+   slashes[0] = '\0';
+   getcwd(cwd, 4096);
+
+   for (i = 0; cwd[i] != '\0'; i++) 
+      if (cwd[i] == '/') slashes_in_cwd++;
+     
+   for (i = 0; i < slashes_in_cwd + 2; i++) {
+      strncat(slashes, "../", 4096 - (i * 3));
+   }
+      
+   result |= run_alias_test("alias/lnk/../aliastest.py", 0);
+   result |= run_alias_test("./alias/real1/aliastest.py", 0);
+   result |= run_alias_test("./alias/real1/real2/../aliastest.py", 0);   
+   result |= run_alias_test("./alias////./lnk//../////./aliastest.py", 0);
+   result |= run_alias_test("alias/lnk/../real2/../aliastest.py", 0);
+
+   snprintf(path, 4096, "%s/alias/real1/aliastest.py", cwd);
+   result |= run_alias_test(path, 0);
+
+   snprintf(path, 4096, "/%s/alias/real1/aliastest.py", cwd);
+   result |= run_alias_test(path, 0);
+
+   snprintf(path, 4096, "%s/%s/alias/real1/aliastest.py", slashes, cwd);
+   result |= run_alias_test(path, 0);
+   
+   return result;
+}
 
 void push_cwd()
 {
@@ -1366,7 +1455,11 @@ int run_test()
    run_readlinks();
    if (had_error)
       return -1;
-                  
+
+   run_alias_tests();
+   if (had_error)
+      return -1;
+   
    check_libraries();
    if (had_error)
       return -1;
